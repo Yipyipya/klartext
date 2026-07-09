@@ -1,26 +1,97 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f7f1e5;
+  --surface: #fffcf5;
+  --ink: #1a1a1a;
+  --mut: #857b6c;
+  --line: #e7dcc7;
+  --lav: #f0d7ff;
+  --teal: #034f46;
+  --teal-ink: #e9f5f2;
+  --ember: #ffa946;
+  --ember-deep: #d97514;
+}
+
+:root[data-theme="dark"] {
+  --bg: #161310;
+  --surface: #201c17;
+  --ink: #f4eee1;
+  --mut: #9d9282;
+  --line: #322b21;
+  --lav: #e3c2fa;
+  --teal: #0c6a5d;
+  --teal-ink: #e9f5f2;
+  --ember: #ffa946;
+  --ember-deep: #ffb763;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-mut: var(--mut);
+  --color-line: var(--line);
+  --color-lav: var(--lav);
+  --color-teal: var(--teal);
+  --color-teal-ink: var(--teal-ink);
+  --color-ember: var(--ember);
+  --color-ember-deep: var(--ember-deep);
+  --font-sans: var(--font-figtree);
+  --font-display: var(--font-garamond);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-figtree), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--ember);
+  color: #1a1a1a;
+}
+
+/* Pulsierender Ring um die aktive Aufnahme-Pill */
+@keyframes klartext-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 169, 70, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(255, 169, 70, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 169, 70, 0);
+  }
+}
+
+.rec-pulse {
+  animation: klartext-pulse 1.7s ease-out infinite;
+}
+
+@keyframes klartext-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.live-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  vertical-align: text-bottom;
+  margin-left: 3px;
+  background: var(--ember-deep);
+  animation: klartext-caret 1s steps(1) infinite;
 }
