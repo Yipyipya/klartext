@@ -42,3 +42,29 @@ vercel --prod
 **Hinweis:** Live-Diktat braucht Chrome, Edge oder Safari (Web Speech API).
 Die Datei-Transkription funktioniert in jedem modernen Browser; beim ersten Mal
 wird einmalig ein Whisper-Modell (~80 MB) geladen und dann gecacht.
+
+## Desktop-App (macOS-Menüleiste) 🖥️
+
+Im Ordner [`desktop/`](desktop/) liegt das Desktop-Upgrade: eine Menüleisten-App,
+die systemweites Diktat kann – wie das Original:
+
+- **⌥ + Leertaste** (in *jeder* App): Aufnahme-Pill erscheint unten mittig,
+  sprechen, nochmal ⌥+Leer → Text wird transkribiert, aufgeräumt und **direkt
+  an der Cursor-Position eingefügt** (`Esc` bricht ab)
+- Transkription läuft lokal über Whisper (erster Start lädt das Modell einmalig)
+- Sprache über das 🎙️-Menü in der Menüleiste umstellbar (Deutsch/English/Auto)
+
+```bash
+cd desktop
+npm install
+npm start          # App starten (Menüleiste: 🎙️)
+npm run dist       # .dmg bauen (dist/) – zum Weitergeben an Freunde
+```
+
+Beim ersten Start fragt macOS nach **Mikrofon** und **Bedienungshilfen**
+(Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen) – letzteres
+braucht die App, um den Text automatisch einzufügen. Ohne die Berechtigung
+landet der Text trotzdem in der Zwischenablage (⌘V zum Einfügen).
+
+Die gebaute .dmg ist unsigniert: Empfänger öffnen sie beim ersten Mal per
+Rechtsklick → „Öffnen".
