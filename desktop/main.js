@@ -19,8 +19,8 @@ const WEB_URL = "https://klartext-adapt-learn.vercel.app";
 const HOTKEY = "Alt+Space"; // ⌥ + Leertaste, in jeder App
 const SMOKE_TEST = process.argv.includes("--smoke-test");
 
-const PILL_W = 380;
-const PILL_H = 88;
+const PILL_W = 520;
+const PILL_H = 210; // Platz für die Live-Mitschrift über der Pill
 
 let pill = null;
 let tray = null;

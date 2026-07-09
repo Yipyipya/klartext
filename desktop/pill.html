@@ -12,11 +12,34 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  #pill {
+  #wrap {
     position: absolute;
-    left: 50%;
-    bottom: 10px;
-    transform: translateX(-50%);
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding-bottom: 10px;
+  }
+  /* Live-Mitschrift über der Pill */
+  #preview {
+    display: none;
+    max-width: 480px;
+    max-height: 96px;
+    overflow: hidden;
+    background: rgba(26, 26, 26, 0.94);
+    color: #f4eee1;
+    border: 1px solid rgba(255, 169, 70, 0.25);
+    border-radius: 18px;
+    padding: 10px 16px;
+    font-size: 14px;
+    line-height: 1.45;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  }
+  #preview.visible { display: block; }
+  #preview .interim { color: #b7ac9b; }
+  #pill {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -37,7 +60,7 @@
   @keyframes blink {
     50% { opacity: 0.35; }
   }
-  canvas { width: 130px; height: 26px; color: #ffa946; }
+  canvas { width: 130px; height: 26px; }
   #timer {
     font-variant-numeric: tabular-nums;
     font-size: 13px;
@@ -47,7 +70,7 @@
   #status {
     font-size: 12px;
     color: #b7ac9b;
-    max-width: 120px;
+    max-width: 140px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -56,22 +79,30 @@
 </style>
 </head>
 <body>
-  <div id="pill">
-    <span id="dot"></span>
-    <canvas id="wave"></canvas>
-    <span id="timer">0:00</span>
-    <span id="status">Aufnahme …</span>
+  <div id="wrap">
+    <div id="preview"></div>
+    <div id="pill">
+      <span id="dot"></span>
+      <canvas id="wave"></canvas>
+      <span id="timer">0:00</span>
+      <span id="status">Aufnahme …</span>
+    </div>
   </div>
 
 <script type="module">
   const statusEl = document.getElementById("status");
   const timerEl = document.getElementById("timer");
   const pillEl = document.getElementById("pill");
+  const previewEl = document.getElementById("preview");
   const canvas = document.getElementById("wave");
 
-  // Whisper (transformers.js) einmalig laden und cachen – Modelldateien
-  // landen im Browser-Cache der App und sind danach offline verfügbar.
+  const SAMPLE_RATE = 16000;
+  const LIVE_WINDOW_S = 28;   // Whisper-Fenster für die Live-Vorschau
+  const LIVE_MIN_S = 1.2;     // erst ab so viel Audio lostranskribieren
+
+  /* ---------- Whisper laden (einmalig, wird gecacht) ---------- */
   let transcriberPromise = null;
+  let transcriberReady = false;
   function getTranscriber() {
     if (!transcriberPromise) {
       transcriberPromise = (async () => {
@@ -83,31 +114,38 @@
             statusEl.textContent = `Modell lädt … ${Math.round(p.progress ?? 0)} %`;
           }
         };
+        let t;
         try {
           if (!navigator.gpu) throw new Error("kein WebGPU");
-          return await pipeline("automatic-speech-recognition", "onnx-community/whisper-base", {
+          t = await pipeline("automatic-speech-recognition", "onnx-community/whisper-base", {
             device: "webgpu",
             dtype: { encoder_model: "fp32", decoder_model_merged: "q4" },
             progress_callback,
           });
         } catch {
-          return await pipeline("automatic-speech-recognition", "onnx-community/whisper-base", {
+          t = await pipeline("automatic-speech-recognition", "onnx-community/whisper-base", {
             device: "wasm",
             dtype: "q8",
             progress_callback,
           });
         }
+        transcriberReady = true;
+        return t;
       })();
-      transcriberPromise.catch(() => (transcriberPromise = null));
+      transcriberPromise.catch(() => {
+        transcriberPromise = null;
+        transcriberReady = false;
+      });
     }
     return transcriberPromise;
   }
+  getTranscriber().catch(() => {}); // direkt beim App-Start vorladen
 
   /* ---------- sanftes Aufräumen (wie Web-App, Stufe „sanft") ---------- */
   const FILLER_DE = /(^|[\s,„("'-])(?:ähm+|ähh+|äh+|ehm+|öhm+|hmm+|mhm+)(?=[\s.,!?:;…)"'-]|$)/gi;
   const FILLER_EN = /(^|[\s,("'-])(?:um+|uh+|uhm+|erm+|hmm+|mhm+)(?=[\s.,!?:;…)"'-]|$)/gi;
   function clean(text, lang) {
-    let t = text
+    const t = text
       .replace(lang === "en" ? FILLER_EN : FILLER_DE, "$1")
       .replace(/\s+([,.!?;:…])/g, "$1")
       .replace(/\s{2,}/g, " ")
@@ -115,9 +153,25 @@
     return t.replace(/(^|[.!?…]\s+)(\p{Ll})/gu, (_m, p, c) => p + c.toUpperCase());
   }
 
-  /* ---------- Aufnahme ---------- */
-  let stream = null, recorder = null, chunks = [], startedAt = 0, timerIv = 0, raf = 0, actx = null;
-  let cancelled = false, currentLang = "de";
+  /* ---------- Zustand ---------- */
+  let stream = null, actx = null, procNode = null;
+  let pcmChunks = [];        // Float32Array-Stücke mit 16 kHz mono
+  let totalSamples = 0;
+  let recordingActive = false, cancelled = false, currentLang = "de";
+  let startedAt = 0, timerIv = 0, raf = 0, liveIv = 0, liveBusy = false;
+
+  function concatPcm(fromSample = 0) {
+    const out = new Float32Array(totalSamples - fromSample);
+    let pos = 0, skipped = 0;
+    for (const c of pcmChunks) {
+      if (skipped + c.length <= fromSample) { skipped += c.length; continue; }
+      const start = Math.max(0, fromSample - skipped);
+      out.set(start ? c.subarray(start) : c, pos);
+      pos += c.length - start;
+      skipped += c.length;
+    }
+    return out;
+  }
 
   function drawWave(analyser) {
     const data = new Uint8Array(analyser.frequencyBinCount);
@@ -144,91 +198,131 @@
     loop();
   }
 
+  function setPreview(text, truncated) {
+    if (!text) {
+      previewEl.classList.remove("visible");
+      previewEl.innerHTML = "";
+      return;
+    }
+    previewEl.classList.add("visible");
+    previewEl.innerHTML = "";
+    const span = document.createElement("span");
+    span.className = "interim";
+    span.textContent = (truncated ? "… " : "") + text;
+    previewEl.appendChild(span);
+    previewEl.scrollTop = previewEl.scrollHeight;
+  }
+
   function resetUI() {
     cancelAnimationFrame(raf);
     clearInterval(timerIv);
+    clearInterval(liveIv);
     timerEl.textContent = "0:00";
     statusEl.textContent = "Aufnahme …";
     pillEl.classList.remove("processing");
+    setPreview("");
   }
 
-  function stopStream() {
+  function stopCapture() {
+    procNode?.disconnect();
+    procNode = null;
     stream?.getTracks().forEach((t) => t.stop());
     stream = null;
     actx?.close().catch(() => {});
     actx = null;
   }
 
+  /* ---------- Live-Vorschau: alle 1,5 s den Puffer transkribieren ---------- */
+  async function liveTick() {
+    if (liveBusy || !recordingActive || !transcriberReady) return;
+    if (totalSamples < SAMPLE_RATE * LIVE_MIN_S) return;
+    liveBusy = true;
+    try {
+      const windowSamples = SAMPLE_RATE * LIVE_WINDOW_S;
+      const truncated = totalSamples > windowSamples;
+      const pcm = concatPcm(truncated ? totalSamples - windowSamples : 0);
+      const t = await getTranscriber();
+      const out = await t(pcm, {
+        language: currentLang || undefined,
+        task: "transcribe",
+      });
+      const text = (Array.isArray(out) ? out.map((o) => o.text).join(" ") : out.text) ?? "";
+      if (recordingActive) setPreview(text.trim(), truncated);
+    } catch {
+      /* Vorschau-Durchlauf fehlgeschlagen – nächster Tick versucht es erneut */
+    } finally {
+      liveBusy = false;
+    }
+  }
+
+  /* ---------- Start / Stopp / Abbrechen ---------- */
   window.klartext.onStart(async (settings) => {
     cancelled = false;
-    chunks = [];
+    recordingActive = true;
+    pcmChunks = [];
+    totalSamples = 0;
     currentLang = settings?.lang ?? "de";
     resetUI();
+
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      recordingActive = false;
       window.klartext.error("Kein Mikrofonzugriff");
       return;
     }
-    actx = new AudioContext();
+
+    // Direkt als 16-kHz-PCM aufnehmen – daraus speist sich Live-Vorschau UND Endergebnis
+    actx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    const src = actx.createMediaStreamSource(stream);
     const analyser = actx.createAnalyser();
     analyser.fftSize = 128;
     analyser.smoothingTimeConstant = 0.75;
-    actx.createMediaStreamSource(stream).connect(analyser);
-    drawWave(analyser);
+    src.connect(analyser);
 
+    procNode = actx.createScriptProcessor(4096, 1, 1);
+    procNode.onaudioprocess = (e) => {
+      if (!recordingActive) return;
+      const c = new Float32Array(e.inputBuffer.getChannelData(0));
+      pcmChunks.push(c);
+      totalSamples += c.length;
+    };
+    const mute = actx.createGain();
+    mute.gain.value = 0; // ScriptProcessor braucht eine Verbindung, aber kein Echo
+    src.connect(procNode);
+    procNode.connect(mute);
+    mute.connect(actx.destination);
+
+    drawWave(analyser);
     startedAt = Date.now();
     timerIv = setInterval(() => {
       const s = Math.floor((Date.now() - startedAt) / 1000);
       timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
     }, 400);
-
-    recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-    recorder.onstop = onRecorderStop;
-    recorder.start(250);
-
-    // Modell im Hintergrund schon mal laden (parallel zur Aufnahme)
+    liveIv = setInterval(liveTick, 1500);
     getTranscriber().catch(() => {});
   });
 
-  window.klartext.onStop(() => {
-    if (recorder?.state === "recording") recorder.stop();
-  });
-
-  window.klartext.onCancel(() => {
-    cancelled = true;
-    if (recorder?.state === "recording") recorder.stop();
-    stopStream();
-    resetUI();
-  });
-
-  async function onRecorderStop() {
-    stopStream();
+  window.klartext.onStop(async () => {
+    if (!recordingActive) return;
+    recordingActive = false;
+    clearInterval(liveIv);
     cancelAnimationFrame(raf);
     clearInterval(timerIv);
-    if (cancelled) return;
+    stopCapture();
 
     pillEl.classList.add("processing");
-    statusEl.textContent = "Transkribiere …";
+    statusEl.textContent = "Finalisiere …";
     try {
-      const blob = new Blob(chunks, { type: "audio/webm" });
-      const buf = await blob.arrayBuffer();
-      const dctx = new AudioContext({ sampleRate: 16000 });
-      const audio = await dctx.decodeAudioData(buf);
-      let pcm;
-      if (audio.numberOfChannels === 1) pcm = audio.getChannelData(0);
-      else {
-        pcm = new Float32Array(audio.length);
-        for (let c = 0; c < audio.numberOfChannels; c++) {
-          const d = audio.getChannelData(c);
-          for (let i = 0; i < audio.length; i++) pcm[i] += d[i] / audio.numberOfChannels;
-        }
+      // Laufenden Live-Durchlauf ausklingen lassen
+      while (liveBusy) await new Promise((r) => setTimeout(r, 60));
+      if (cancelled) return;
+      if (totalSamples < SAMPLE_RATE * 0.4) {
+        window.klartext.result("");
+        return;
       }
-      dctx.close();
-
-      const transcriber = await getTranscriber();
-      const out = await transcriber(pcm, {
+      const t = await getTranscriber();
+      const out = await t(concatPcm(0), {
         chunk_length_s: 30,
         stride_length_s: 5,
         language: currentLang || undefined,
@@ -239,9 +333,20 @@
     } catch (err) {
       window.klartext.error(String(err?.message ?? err));
     } finally {
+      pcmChunks = [];
+      totalSamples = 0;
       resetUI();
     }
-  }
+  });
+
+  window.klartext.onCancel(() => {
+    cancelled = true;
+    recordingActive = false;
+    stopCapture();
+    pcmChunks = [];
+    totalSamples = 0;
+    resetUI();
+  });
 </script>
 </body>
 </html>
