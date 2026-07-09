@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cleanTranscript } from "@/lib/cleanup";
-import { countWords, type Settings } from "@/lib/store";
+import { polishTranscript } from "@/lib/polish";
+import { countWords, WHISPER_MODELS, type Settings } from "@/lib/store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -13,7 +14,14 @@ export interface UploadResult {
   durationSec: number;
 }
 
-type Status = "wartet" | "liest" | "modell" | "transkribiert" | "fertig" | "fehler";
+type Status =
+  | "wartet"
+  | "liest"
+  | "modell"
+  | "transkribiert"
+  | "feinschliff"
+  | "fertig"
+  | "fehler";
 
 interface Item {
   id: string;
@@ -29,6 +37,7 @@ const STATUS_LABEL: Record<Status, string> = {
   liest: "Audio wird gelesen …",
   modell: "Whisper-Modell wird geladen …",
   transkribiert: "Transkribiert …",
+  feinschliff: "Klartext-Feinschliff …",
   fertig: "Fertig",
   fehler: "Fehler",
 };
@@ -129,7 +138,15 @@ export default function UploadPanel({
         }
       };
       worker.addEventListener("message", onMsg);
-      worker.postMessage({ id, audio: pcm, language }, [pcm.buffer as ArrayBuffer]);
+      worker.postMessage(
+        {
+          id,
+          audio: pcm,
+          language,
+          model: WHISPER_MODELS[settingsRef.current.whisperModel],
+        },
+        [pcm.buffer as ArrayBuffer]
+      );
     });
   }
 
@@ -147,7 +164,16 @@ export default function UploadPanel({
         ? null
         : settingsRef.current.lang.split("-")[0];
       const rawText = await transcribeInWorker(next.id, pcm, lang);
-      const cleaned = cleanTranscript(rawText, settingsRef.current);
+      let cleaned = cleanTranscript(rawText, settingsRef.current);
+      const s = settingsRef.current;
+      if (cleaned && s.polish && s.apiKey.trim()) {
+        patch(next.id, { status: "feinschliff", detail: undefined });
+        try {
+          cleaned = await polishTranscript(cleaned, s.apiKey.trim());
+        } catch {
+          // Feinschliff fehlgeschlagen – lokale Version behalten
+        }
+      }
       patch(next.id, { status: "fertig", text: cleaned, detail: undefined });
       if (cleaned) {
         onDone({
@@ -246,7 +272,8 @@ export default function UploadPanel({
       <p className="text-center text-xs text-mut">
         Läuft komplett lokal in deinem Browser – die Aufnahme wird nirgendwohin
         hochgeladen. Beim ersten Mal lädt Klartext einmalig ein Whisper-Modell
-        (~80&nbsp;MB), danach ist es gecacht.
+        (~80–250&nbsp;MB je nach Genauigkeit in den Einstellungen), danach ist es
+        gecacht.
       </p>
 
       {/* Ergebnisliste */}

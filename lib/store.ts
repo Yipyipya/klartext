@@ -5,11 +5,21 @@ export interface DictEntry {
   to: string;
 }
 
+export type WhisperQuality = "genau" | "schnell";
+
+export const WHISPER_MODELS: Record<WhisperQuality, string> = {
+  genau: "onnx-community/whisper-small",
+  schnell: "onnx-community/whisper-base",
+};
+
 export interface Settings {
   lang: string; // BCP-47, z. B. "de-DE"
   cleanup: CleanupLevel;
   autoCopy: boolean;
   dictionary: DictEntry[];
+  whisperModel: WhisperQuality;
+  polish: boolean; // KI-Feinschliff über die Claude-API
+  apiKey: string; // eigener Claude-API-Key des Nutzers, bleibt im localStorage dieses Geräts
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -17,6 +27,9 @@ export const DEFAULT_SETTINGS: Settings = {
   cleanup: "sanft",
   autoCopy: true,
   dictionary: [],
+  whisperModel: "genau",
+  polish: false,
+  apiKey: "",
 };
 
 export const LANGUAGES: { code: string; label: string }[] = [

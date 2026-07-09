@@ -100,10 +100,22 @@
   const LIVE_WINDOW_S = 28;   // Whisper-Fenster für die Live-Vorschau
   const LIVE_MIN_S = 1.2;     // erst ab so viel Audio lostranskribieren
 
-  /* ---------- Whisper laden (einmalig, wird gecacht) ---------- */
+  /* ---------- Whisper laden (einmalig pro Modell, wird gecacht) ---------- */
+  const MODELS = {
+    genau: "onnx-community/whisper-small",
+    schnell: "onnx-community/whisper-base",
+  };
+  let currentModelId = MODELS.genau;
   let transcriberPromise = null;
   let transcriberReady = false;
-  function getTranscriber() {
+  let loadedModel = "";
+
+  function getTranscriber(modelId) {
+    if (loadedModel !== modelId) {
+      transcriberPromise = null;
+      transcriberReady = false;
+      loadedModel = modelId;
+    }
     if (!transcriberPromise) {
       transcriberPromise = (async () => {
         const { pipeline } = await import(
@@ -117,13 +129,13 @@
         let t;
         try {
           if (!navigator.gpu) throw new Error("kein WebGPU");
-          t = await pipeline("automatic-speech-recognition", "onnx-community/whisper-base", {
+          t = await pipeline("automatic-speech-recognition", modelId, {
             device: "webgpu",
             dtype: { encoder_model: "fp32", decoder_model_merged: "q4" },
             progress_callback,
           });
         } catch {
-          t = await pipeline("automatic-speech-recognition", "onnx-community/whisper-base", {
+          t = await pipeline("automatic-speech-recognition", modelId, {
             device: "wasm",
             dtype: "q8",
             progress_callback,
@@ -139,7 +151,7 @@
     }
     return transcriberPromise;
   }
-  getTranscriber().catch(() => {}); // direkt beim App-Start vorladen
+  getTranscriber(currentModelId).catch(() => {}); // direkt beim App-Start vorladen
 
   /* ---------- sanftes Aufräumen (wie Web-App, Stufe „sanft") ---------- */
   const FILLER_DE = /(^|[\s,„("'-])(?:ähm+|ähh+|äh+|ehm+|öhm+|hmm+|mhm+)(?=[\s.,!?:;…)"'-]|$)/gi;
@@ -241,7 +253,7 @@
       const windowSamples = SAMPLE_RATE * LIVE_WINDOW_S;
       const truncated = totalSamples > windowSamples;
       const pcm = concatPcm(truncated ? totalSamples - windowSamples : 0);
-      const t = await getTranscriber();
+      const t = await getTranscriber(currentModelId);
       const out = await t(pcm, {
         language: currentLang || undefined,
         task: "transcribe",
@@ -262,6 +274,7 @@
     pcmChunks = [];
     totalSamples = 0;
     currentLang = settings?.lang ?? "de";
+    currentModelId = MODELS[settings?.model] ?? MODELS.genau;
     resetUI();
 
     try {
@@ -300,7 +313,12 @@
       timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
     }, 400);
     liveIv = setInterval(liveTick, 1500);
-    getTranscriber().catch(() => {});
+    getTranscriber(currentModelId).catch(() => {});
+  });
+
+  window.klartext.onPolishStart(() => {
+    pillEl.classList.add("processing");
+    statusEl.textContent = "Feinschliff …";
   });
 
   window.klartext.onStop(async () => {
@@ -321,7 +339,7 @@
         window.klartext.result("");
         return;
       }
-      const t = await getTranscriber();
+      const t = await getTranscriber(currentModelId);
       const out = await t(concatPcm(0), {
         chunk_length_s: 30,
         stride_length_s: 5,

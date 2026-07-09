@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<style>
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    background: #f7f1e5;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 16px; margin: 0 0 6px; }
+  p { font-size: 12px; color: #857b6c; margin: 0 0 14px; line-height: 1.5; }
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    font-size: 13px;
+    border: 2px solid #1a1a1a;
+    border-radius: 10px;
+    outline: none;
+    background: #fffcf5;
+  }
+  .row { display: flex; gap: 10px; margin-top: 14px; justify-content: flex-end; }
+  button {
+    padding: 9px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    border: 2px solid #1a1a1a;
+    border-radius: 999px;
+    cursor: pointer;
+    background: #fffcf5;
+  }
+  button.primary { background: #f0d7ff; }
+  button.danger { background: transparent; border-color: transparent; color: #857b6c; }
+</style>
+</head>
+<body>
+  <h1>Claude-Feinschliff aktivieren</h1>
+  <p>
+    Trage deinen eigenen Claude-API-Key ein (erstellen unter
+    console.anthropic.com). Der Key wird verschlüsselt im macOS-Schlüsselbund
+    gespeichert und ausschließlich direkt an die Claude-API gesendet –
+    Klartext korrigiert damit falsch erkannte Wörter anhand des Kontexts.
+  </p>
+  <input id="key" type="password" placeholder="sk-ant-…" autocomplete="off" autofocus />
+  <div class="row">
+    <button class="danger" id="remove">Key entfernen</button>
+    <button id="cancel">Abbrechen</button>
+    <button class="primary" id="save">Speichern</button>
+  </div>
+<script>
+  const input = document.getElementById("key");
+  document.getElementById("save").addEventListener("click", () => {
+    if (input.value.trim()) window.klartext.saveApiKey(input.value);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && input.value.trim()) window.klartext.saveApiKey(input.value);
+  });
+  document.getElementById("remove").addEventListener("click", () => window.klartext.saveApiKey(""));
+  document.getElementById("cancel").addEventListener("click", () => window.klartext.closeKeyWindow());
+</script>
+</body>
+</html>

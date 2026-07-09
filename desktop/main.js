@@ -8,12 +8,14 @@ const {
   ipcMain,
   screen,
   systemPreferences,
+  safeStorage,
   shell,
   nativeImage,
 } = require("electron");
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const { Anthropic } = require("@anthropic-ai/sdk");
 
 const WEB_URL = "https://klartext-adapt-learn.vercel.app";
 const HOTKEY = "Alt+Space"; // ⌥ + Leertaste, in jeder App
@@ -29,11 +31,17 @@ let recording = false;
 /* ---------- Einstellungen (userData/settings.json) ---------- */
 const settingsPath = () => path.join(app.getPath("userData"), "settings.json");
 
+const SETTINGS_DEFAULTS = {
+  lang: "de", // "de" | "en" | "" (= automatisch)
+  model: "genau", // "genau" (whisper-small) | "schnell" (whisper-base)
+  apiKeyEnc: null, // Claude-API-Key, verschlüsselt über den macOS-Schlüsselbund
+};
+
 function loadSettings() {
   try {
-    return { lang: "de", ...JSON.parse(fs.readFileSync(settingsPath(), "utf8")) };
+    return { ...SETTINGS_DEFAULTS, ...JSON.parse(fs.readFileSync(settingsPath(), "utf8")) };
   } catch {
-    return { lang: "de" }; // "de" | "en" | "" (= automatisch)
+    return { ...SETTINGS_DEFAULTS };
   }
 }
 
@@ -118,11 +126,53 @@ function toggleRecording() {
   else startRecording();
 }
 
+/* ---------- Claude-Feinschliff (optional, eigener API-Key) ---------- */
+const POLISH_MODEL = "claude-opus-4-8";
+const POLISH_SYSTEM = `Du korrigierst Diktat-Transkripte aus einer Spracherkennung.
+- Korrigiere falsch erkannte Wörter anhand des Kontexts (z. B. "umslappt" → "ob's klappt").
+- Entferne Füllwörter, Versprecher und unbeabsichtigte Wiederholungen.
+- Setze sinnvolle Interpunktion, Groß-/Kleinschreibung und Absätze.
+- Ändere weder Inhalt noch Ton noch Sprache. Fasse nichts zusammen, lasse nichts weg.
+- Antworte AUSSCHLIESSLICH mit dem korrigierten Text, ohne Kommentar oder Einleitung.`;
+
+function getApiKey() {
+  if (!settings?.apiKeyEnc) return null;
+  try {
+    return safeStorage.decryptString(Buffer.from(settings.apiKeyEnc, "base64"));
+  } catch {
+    return null;
+  }
+}
+
+async function polishText(text) {
+  const key = getApiKey();
+  if (!key) return text;
+  try {
+    pill?.webContents.send("polish-start");
+    const client = new Anthropic({ apiKey: key });
+    const response = await client.messages.create({
+      model: POLISH_MODEL,
+      max_tokens: 16000,
+      system: POLISH_SYSTEM,
+      messages: [{ role: "user", content: text }],
+    });
+    const block = response.content.find((b) => b.type === "text");
+    return (block && block.text.trim()) || text;
+  } catch (err) {
+    console.error("Feinschliff fehlgeschlagen – lokale Version wird genutzt:", err?.message);
+    return text;
+  }
+}
+
 /* ---------- Ergebnis: kopieren + an Cursor-Position einfügen ---------- */
-ipcMain.on("result", (_e, text) => {
+ipcMain.on("result", async (_e, text) => {
+  if (!text || !text.trim()) {
+    pill?.hide();
+    return;
+  }
+  const finalText = await polishText(text.trim());
   pill?.hide();
-  if (!text || !text.trim()) return;
-  clipboard.writeText(text.trim());
+  clipboard.writeText(finalText);
   if (process.platform === "darwin") {
     // Braucht Bedienungshilfen-Berechtigung (Systemeinstellungen → Datenschutz)
     execFile("osascript", [
@@ -133,6 +183,41 @@ ipcMain.on("result", (_e, text) => {
     });
   }
 });
+
+/* ---------- API-Key-Fenster ---------- */
+let keyWin = null;
+
+function openKeyWindow() {
+  if (keyWin) {
+    keyWin.focus();
+    return;
+  }
+  keyWin = new BrowserWindow({
+    width: 480,
+    height: 300,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    title: "Klartext – Claude-Feinschliff",
+    webPreferences: { preload: path.join(__dirname, "preload.js") },
+  });
+  keyWin.loadFile("keywin.html");
+  keyWin.on("closed", () => (keyWin = null));
+}
+
+ipcMain.on("save-api-key", (_e, key) => {
+  const trimmed = (key || "").trim();
+  if (trimmed && safeStorage.isEncryptionAvailable()) {
+    settings.apiKeyEnc = safeStorage.encryptString(trimmed).toString("base64");
+  } else {
+    settings.apiKeyEnc = null;
+  }
+  saveSettings(settings);
+  keyWin?.close();
+  updateTray();
+});
+
+ipcMain.on("close-key-window", () => keyWin?.close());
 
 ipcMain.on("pill-error", (_e, message) => {
   console.error("Pill-Fehler:", message);
@@ -160,6 +245,20 @@ function updateTray() {
     },
   }));
 
+  const modelItems = [
+    ["Genau (empfohlen, ~250 MB)", "genau"],
+    ["Schnell (~80 MB)", "schnell"],
+  ].map(([label, value]) => ({
+    label,
+    type: "radio",
+    checked: settings.model === value,
+    click: () => {
+      settings.model = value;
+      saveSettings(settings);
+      updateTray();
+    },
+  }));
+
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
@@ -169,6 +268,27 @@ function updateTray() {
       },
       { type: "separator" },
       { label: "Sprache", submenu: langItems },
+      { label: "Genauigkeit", submenu: modelItems },
+      { type: "separator" },
+      {
+        label: getApiKey()
+          ? "Claude-Feinschliff: aktiv ✓"
+          : "Claude-Feinschliff: aus",
+        enabled: false,
+      },
+      { label: "API-Key eintragen …", click: openKeyWindow },
+      ...(settings.apiKeyEnc
+        ? [
+            {
+              label: "API-Key entfernen",
+              click: () => {
+                settings.apiKeyEnc = null;
+                saveSettings(settings);
+                updateTray();
+              },
+            },
+          ]
+        : []),
       { type: "separator" },
       { label: "Klartext Web-App öffnen", click: () => shell.openExternal(WEB_URL) },
       {

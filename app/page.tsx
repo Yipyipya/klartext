@@ -6,6 +6,7 @@ import UploadPanel, { type UploadResult } from "@/components/UploadPanel";
 import HistoryPanel from "@/components/HistoryPanel";
 import { useDictation } from "@/hooks/useDictation";
 import { cleanTranscript } from "@/lib/cleanup";
+import { polishTranscript } from "@/lib/polish";
 import {
   DEFAULT_SETTINGS,
   LANGUAGES,
@@ -111,9 +112,10 @@ export default function Home() {
     const duration = (Date.now() - sessionStartAt.current) / 1000;
     d.stop();
     // Kurz warten, bis späte finale Ergebnisse der Erkennung eingetroffen sind
-    setTimeout(() => {
+    setTimeout(async () => {
       const raw = finalRef.current;
-      const cleaned = cleanTranscript(raw, settingsRef.current);
+      const s = settingsRef.current;
+      const cleaned = cleanTranscript(raw, s);
       const sessionWords = Math.max(
         0,
         countWords(cleaned) - sessionStartWords.current
@@ -121,20 +123,33 @@ export default function Home() {
       if (!cleaned || sessionWords === 0) return;
       d.setFinalText(cleaned);
       setLastRaw(raw);
+
+      // Optionaler kontextbasierter Feinschliff über die Claude-API
+      let final = cleaned;
+      if (s.polish && s.apiKey.trim()) {
+        showToast("Klartext-Feinschliff läuft …");
+        try {
+          final = await polishTranscript(cleaned, s.apiKey.trim());
+          d.setFinalText(final);
+        } catch {
+          showToast("Feinschliff fehlgeschlagen – lokale Version wird genutzt");
+        }
+      }
+
       setHistory(
         addHistory({
           id: crypto.randomUUID(),
           ts: Date.now(),
           source: "diktat",
-          text: cleaned,
+          text: final,
           raw,
-          words: sessionWords,
+          words: Math.max(1, countWords(final) - sessionStartWords.current),
           durationSec: Math.round(duration),
         })
       );
-      if (settingsRef.current.autoCopy) copy(cleaned);
+      if (s.autoCopy) copy(final);
     }, 350);
-  }, [d, copy]);
+  }, [d, copy, showToast]);
 
   const toggleDictation = useCallback(() => {
     if (listeningRef.current) finishDictation();
@@ -543,6 +558,53 @@ function SettingsCard({
         />
         Nach dem Diktat automatisch kopieren
       </label>
+
+      <label className="block text-sm">
+        <span className="mb-1.5 block font-bold">
+          Genauigkeit (Datei-Transkription)
+        </span>
+        <select
+          value={settings.whisperModel}
+          onChange={(e) =>
+            setSettings((s) => ({
+              ...s,
+              whisperModel: e.target.value as Settings["whisperModel"],
+            }))
+          }
+          className="w-full rounded-xl border-2 border-ink bg-surface px-3 py-2 outline-none"
+        >
+          <option value="genau">Genau – Whisper small (~250 MB)</option>
+          <option value="schnell">Schnell – Whisper base (~80 MB)</option>
+        </select>
+      </label>
+
+      <div className="sm:col-span-2 rounded-2xl border border-line bg-bg/60 p-4">
+        <label className="flex items-center gap-2.5 text-sm font-semibold">
+          <input
+            type="checkbox"
+            checked={settings.polish}
+            onChange={(e) =>
+              setSettings((s) => ({ ...s, polish: e.target.checked }))
+            }
+            className="h-4 w-4 accent-[var(--teal)]"
+          />
+          KI-Feinschliff mit Claude (eigener API-Key)
+        </label>
+        <p className="mb-3 mt-1.5 text-xs text-mut">
+          Korrigiert falsch erkannte Wörter anhand des Kontexts – wie beim
+          Original. Dein Key bleibt nur in diesem Browser gespeichert und wird
+          ausschließlich direkt an die Claude-API gesendet. Key erstellen:
+          console.anthropic.com
+        </p>
+        <input
+          type="password"
+          value={settings.apiKey}
+          onChange={(e) => setSettings((s) => ({ ...s, apiKey: e.target.value }))}
+          placeholder="sk-ant-…"
+          autoComplete="off"
+          className="w-full rounded-xl border-2 border-ink bg-surface px-3 py-2 text-sm outline-none"
+        />
+      </div>
 
       <div className="sm:col-span-2">
         <p className="mb-1.5 text-sm font-bold">Persönliches Wörterbuch</p>
