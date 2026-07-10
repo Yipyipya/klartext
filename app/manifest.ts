@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "Sprich. Der Rest ist Text. Live-Diktat und Audio-Transkription direkt im Browser.",
     start_url: "/",
     display: "standalone",
-    background_color: "#f7f3ec",
-    theme_color: "#f7f3ec",
+    background_color: "#f6f1e7",
+    theme_color: "#f6f1e7",
     icons: [
       {
         src: "/icon.svg",
