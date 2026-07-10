@@ -196,6 +196,14 @@ export default function DownloadPanel() {
           </a>
           , sodass jeder nachsehen kann, was die App tut.
         </p>
+        <p className="mt-2">
+          Sollte macOS trotzdem melden, die App sei „beschädigt", einmal
+          Terminal öffnen und diesen Befehl ausführen, danach startet sie
+          normal:
+        </p>
+        <code className="mt-2 block overflow-x-auto rounded-xl bg-ink/85 px-3 py-2 font-mono text-xs text-surface">
+          xattr -cr /Applications/Klartext.app
+        </code>
       </div>
     </div>
   );
