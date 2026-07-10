@@ -32,6 +32,15 @@ const PILL_H = 210; // Platz für die Live-Mitschrift über der Pill
 let pill = null;
 let tray = null;
 let recording = false;
+let isQuitting = false;
+
+// Nur eine Instanz zulassen. Ohne das startet jeder Aufruf eine neue Kopie
+// (mehrfach im Task-Manager, „(2)“/„(3)“, jeweils eigener RAM-Verbrauch).
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+app.on("second-instance", () => {
+  // Zweiter Start: vorhandene Instanz zeigt ihr Menü, statt sich zu verdoppeln.
+  if (tray) tray.popUpContextMenu();
+});
 
 /* ---------- Einstellungen (userData/settings.json) ---------- */
 const settingsPath = () => path.join(app.getPath("userData"), "settings.json");
@@ -332,7 +341,7 @@ function updateTray() {
           ]
         : []),
       { type: "separator" },
-      { label: "Beenden", role: "quit" },
+      { label: "Klartext beenden", click: quitApp },
     ])
   );
   tray.setToolTip(`Klartext – ${HOTKEY_LABEL} zum Diktieren`);
@@ -352,11 +361,44 @@ function createTray() {
   }
   tray = new Tray(img);
   if (!IS_MAC) tray.setTitle("Klartext"); // no-op auf Windows, Fallback auf Linux
+  // Auf Windows öffnet ein normaler Linksklick sonst nichts – Menü zeigen.
+  if (!IS_MAC) tray.on("click", () => tray.popUpContextMenu());
   updateTray();
+}
+
+/* ---------- Sauberes Beenden ---------- */
+function quitApp() {
+  isQuitting = true;
+  try {
+    globalShortcut.unregisterAll();
+  } catch {
+    /* egal */
+  }
+  try {
+    pill?.destroy();
+  } catch {
+    /* egal */
+  }
+  try {
+    keyWin?.destroy();
+  } catch {
+    /* egal */
+  }
+  try {
+    tray?.destroy();
+  } catch {
+    /* egal */
+  }
+  app.quit();
 }
 
 /* ---------- App-Start ---------- */
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) {
+    // Eine andere Instanz läuft bereits – diese Kopie sofort schließen.
+    app.quit();
+    return;
+  }
   settings = loadSettings();
   if (process.platform === "darwin") app.dock?.hide();
 
@@ -379,5 +421,8 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on("window-all-closed", (e) => e.preventDefault()); // Menüleisten-App bleibt aktiv
+app.on("window-all-closed", (e) => {
+  // Menüleisten-/Tray-App bleibt im Hintergrund aktiv, außer beim echten Beenden.
+  if (!isQuitting) e.preventDefault();
+});
 app.on("will-quit", () => globalShortcut.unregisterAll());

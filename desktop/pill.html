@@ -151,7 +151,8 @@
     }
     return transcriberPromise;
   }
-  getTranscriber(currentModelId).catch(() => {}); // direkt beim App-Start vorladen
+  // Kein Vorladen beim App-Start: das Modell (~250 MB) wird erst beim ersten
+  // Diktat geladen und danach gecacht. So bleibt die App im Leerlauf schlank.
 
   /* ---------- sanftes Aufräumen (wie Web-App, Stufe „sanft") ---------- */
   const FILLER_DE = /(^|[\s,„("'-])(?:ähm+|ähh+|äh+|ehm+|öhm+|hmm+|mhm+)(?=[\s.,!?:;…)"'-]|$)/gi;
