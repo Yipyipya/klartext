@@ -18,7 +18,12 @@ const fs = require("fs");
 const { Anthropic } = require("@anthropic-ai/sdk");
 
 const WEB_URL = "https://klartext-adapt-learn.vercel.app";
-const HOTKEY = "Alt+Space"; // ⌥ + Leertaste, in jeder App
+const IS_MAC = process.platform === "darwin";
+const IS_WIN = process.platform === "win32";
+// macOS: ⌥+Leertaste. Windows/Linux: Strg+Umschalt+Leertaste
+// (Alt+Space öffnet unter Windows das System-Fenstermenü, daher anders).
+const HOTKEY = IS_MAC ? "Alt+Space" : "Control+Shift+Space";
+const HOTKEY_LABEL = IS_MAC ? "⌥ + Leertaste" : "Strg + Umschalt + Leertaste";
 const SMOKE_TEST = process.argv.includes("--smoke-test");
 
 const PILL_W = 520;
@@ -78,6 +83,10 @@ function createPill() {
   });
   pill.setAlwaysOnTop(true, "screen-saver");
   pill.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Mikrofon-Zugriff im Fenster erlauben (v. a. für Windows/Linux nötig)
+  pill.webContents.session.setPermissionRequestHandler((_wc, permission, cb) => {
+    cb(permission === "media" || permission === "microphone");
+  });
   pill.loadFile("pill.html");
 }
 
@@ -173,14 +182,34 @@ ipcMain.on("result", async (_e, text) => {
   const finalText = await polishText(text.trim());
   pill?.hide();
   clipboard.writeText(finalText);
-  if (process.platform === "darwin") {
+  const onErr = (err) => {
+    if (err) {
+      console.error(
+        "Einfügen fehlgeschlagen, der Text liegt in der Zwischenablage:",
+        err.message
+      );
+    }
+  };
+  if (IS_MAC) {
     // Braucht Bedienungshilfen-Berechtigung (Systemeinstellungen → Datenschutz)
-    execFile("osascript", [
-      "-e",
-      'tell application "System Events" to keystroke "v" using command down',
-    ], (err) => {
-      if (err) console.error("Einfügen fehlgeschlagen – Text liegt in der Zwischenablage:", err.message);
-    });
+    execFile(
+      "osascript",
+      ["-e", 'tell application "System Events" to keystroke "v" using command down'],
+      onErr
+    );
+  } else if (IS_WIN) {
+    // Kurz warten, bis die vorher aktive App wieder im Vordergrund ist, dann Strg+V senden
+    execFile(
+      "powershell",
+      [
+        "-NoProfile",
+        "-WindowStyle",
+        "Hidden",
+        "-Command",
+        "Add-Type -AssemblyName System.Windows.Forms; Start-Sleep -Milliseconds 120; [System.Windows.Forms.SendKeys]::SendWait('^v')",
+      ],
+      onErr
+    );
   }
 });
 
@@ -229,7 +258,7 @@ ipcMain.on("pill-error", (_e, message) => {
 /* ---------- Tray (Menüleiste) ---------- */
 function updateTray() {
   if (!tray) return;
-  tray.setTitle(recording ? "🔴" : "🎙️");
+  if (IS_MAC) tray.setTitle(recording ? " 🔴" : " 🎙️");
   const langItems = [
     ["Deutsch", "de"],
     ["English", "en"],
@@ -291,22 +320,38 @@ function updateTray() {
         : []),
       { type: "separator" },
       { label: "Klartext Web-App öffnen", click: () => shell.openExternal(WEB_URL) },
-      {
-        label: "Berechtigung fürs Einfügen prüfen",
-        click: () => {
-          // Öffnet ggf. den macOS-Dialog für Bedienungshilfen
-          systemPreferences.isTrustedAccessibilityClient(true);
-        },
-      },
+      ...(IS_MAC
+        ? [
+            {
+              label: "Berechtigung fürs Einfügen prüfen",
+              click: () => {
+                // Öffnet ggf. den macOS-Dialog für Bedienungshilfen
+                systemPreferences.isTrustedAccessibilityClient(true);
+              },
+            },
+          ]
+        : []),
       { type: "separator" },
       { label: "Beenden", role: "quit" },
     ])
   );
-  tray.setToolTip(`Klartext – ${HOTKEY.replace("Alt", "⌥").replace("Space", "Leertaste")} zum Diktieren`);
+  tray.setToolTip(`Klartext – ${HOTKEY_LABEL} zum Diktieren`);
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createEmpty());
+  // macOS zeigt einen Emoji-Titel; Windows/Linux brauchen ein echtes Icon
+  let img = nativeImage.createEmpty();
+  if (!IS_MAC) {
+    try {
+      img = nativeImage
+        .createFromPath(path.join(__dirname, "icon.png"))
+        .resize({ width: 16, height: 16 });
+    } catch {
+      /* ohne Icon zeigt Windows ein Standard-Symbol */
+    }
+  }
+  tray = new Tray(img);
+  if (!IS_MAC) tray.setTitle("Klartext"); // no-op auf Windows, Fallback auf Linux
   updateTray();
 }
 

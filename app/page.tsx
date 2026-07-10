@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Waveform from "@/components/Waveform";
 import UploadPanel, { type UploadResult } from "@/components/UploadPanel";
 import HistoryPanel from "@/components/HistoryPanel";
+import DownloadPanel from "@/components/DownloadPanel";
 import { useDictation } from "@/hooks/useDictation";
 import { cleanTranscript } from "@/lib/cleanup";
 import { polishTranscript } from "@/lib/polish";
@@ -21,7 +22,7 @@ import {
   type Settings,
 } from "@/lib/store";
 
-type Tab = "diktat" | "dateien" | "verlauf";
+type Tab = "diktat" | "dateien" | "verlauf" | "desktop";
 
 export default function Home() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -258,6 +259,7 @@ export default function Home() {
                 ["diktat", "Diktat"],
                 ["dateien", "Dateien"],
                 ["verlauf", "Verlauf"],
+                ["desktop", "Desktop"],
               ] as [Tab, string][]
             ).map(([key, label]) => (
               <button
@@ -440,6 +442,21 @@ export default function Home() {
               onDelete={(id) => setHistory(removeHistory(id))}
               onClear={() => setHistory(clearHistory())}
             />
+          </div>
+        )}
+
+        {tab === "desktop" && (
+          <div className="space-y-5">
+            <div className="rise rise-1 text-center">
+              <h1 className="font-display text-[2.3rem] leading-tight tracking-tight sm:text-[2.8rem]">
+                Klartext für den Desktop
+              </h1>
+              <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-mut">
+                Diktiere per Shortcut in jede App auf deinem Mac oder Windows-PC.
+                Der Text landet direkt an der Cursor-Position.
+              </p>
+            </div>
+            <DownloadPanel />
           </div>
         )}
       </main>
