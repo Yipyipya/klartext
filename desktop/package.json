@@ -13,6 +13,7 @@
   "build": {
     "appId": "app.klartext.desktop",
     "productName": "Klartext",
+    "afterPack": "adhoc-sign.js",
     "directories": {
       "output": "dist"
     },
