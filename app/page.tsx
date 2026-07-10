@@ -71,10 +71,10 @@ export default function Home() {
     async (text: string) => {
       try {
         await navigator.clipboard.writeText(text);
-        showToast("Kopiert ✓ – wechsle die App und füge ein");
+        showToast("Kopiert. Wechsle jetzt die App und füge ein.");
         return true;
       } catch {
-        showToast("Kopieren nicht möglich – bitte manuell markieren");
+        showToast("Kopieren nicht möglich. Bitte markiere den Text manuell.");
         return false;
       }
     },
@@ -132,7 +132,7 @@ export default function Home() {
           final = await polishTranscript(cleaned, s.apiKey.trim());
           d.setFinalText(final);
         } catch {
-          showToast("Feinschliff fehlgeschlagen – lokale Version wird genutzt");
+          showToast("Feinschliff fehlgeschlagen. Es wird die lokale Version genutzt.");
         }
       }
 
@@ -312,16 +312,16 @@ export default function Home() {
                 </span>
               </h1>
               <p className="mx-auto mt-3 max-w-lg text-[15px] leading-relaxed text-mut">
-                Diktiere hier, kopiere mit einem Klick – und füge den Text in
-                jeder App ein. Rund 4× schneller als Tippen.
+                Diktiere hier, kopiere mit einem Klick und füge den Text in
+                jeder App ein. Das ist rund 4× schneller als Tippen.
               </p>
             </div>
 
             {!d.supported && (
               <div className="kt-hair rounded-3xl bg-lav/40 p-4 text-sm text-lav-ink">
-                Dein Browser unterstützt kein Live-Diktat (z.&nbsp;B. Firefox).
-                Nutze Chrome, Edge oder Safari – oder transkribiere Aufnahmen im
-                Tab <b>Dateien</b>, das funktioniert überall.
+                Dein Browser unterstützt kein Live-Diktat, zum Beispiel Firefox.
+                Nutze Chrome, Edge oder Safari. Alternativ kannst du Aufnahmen
+                im Tab <b>Dateien</b> transkribieren, das funktioniert überall.
               </div>
             )}
             {d.error && (
@@ -347,7 +347,7 @@ export default function Home() {
                 <textarea
                   value={d.finalText}
                   onChange={(e) => d.setFinalText(e.target.value)}
-                  placeholder="Halte die Leertaste gedrückt oder tippe unten auf „Diktieren“ – und sprich einfach los …"
+                  placeholder="Halte die Leertaste gedrückt oder tippe unten auf „Diktieren“ und sprich einfach los …"
                   className="min-h-[38vh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none placeholder:text-mut/60"
                 />
               )}
@@ -414,8 +414,8 @@ export default function Home() {
                 Aufnahmen transkribieren
               </h1>
               <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-mut">
-                Sprachmemos, Meetings oder Sprachnachrichten – privat, direkt
-                auf deinem Gerät.
+                Sprachmemos, Meetings oder Sprachnachrichten. Alles bleibt
+                privat und direkt auf deinem Gerät.
               </p>
             </div>
             <div className="rise rise-2">
@@ -495,12 +495,13 @@ export default function Home() {
       <footer className="pb-32 pt-6">
         <div className="mx-auto max-w-3xl px-4 text-center text-xs leading-relaxed text-mut">
           <p>
-            Klartext läuft direkt in deinem Browser – keine Konten, keine
-            Kosten. Teile einfach den Link mit Freunden.
+            Klartext läuft direkt in deinem Browser. Es gibt keine Konten und
+            keine Kosten. Teile einfach den Link mit Freunden.
           </p>
           <p className="mt-1">
-            Tipp: Über „Zum Startbildschirm hinzufügen“ / „App installieren“
-            wird Klartext zur App auf jedem Gerät.
+            Du kannst Klartext auch als App installieren. Wähle dazu im
+            Browser-Menü „Zum Startbildschirm hinzufügen“ oder „App
+            installieren“.
           </p>
         </div>
       </footer>
@@ -559,9 +560,9 @@ function SettingsCard({
           }
           className="field"
         >
-          <option value="aus">Aus – Rohtranskript behalten</option>
-          <option value="sanft">Sanft – Füllwörter & Interpunktion</option>
-          <option value="stark">Stark – auch Wiederholungen & Satzenden</option>
+          <option value="aus">Aus: Rohtranskript behalten</option>
+          <option value="sanft">Sanft: Füllwörter und Interpunktion</option>
+          <option value="stark">Stark: auch Wiederholungen und Satzenden</option>
         </select>
       </label>
 
@@ -579,8 +580,8 @@ function SettingsCard({
           }
           className="field"
         >
-          <option value="genau">Genau – Whisper small (~250 MB)</option>
-          <option value="schnell">Schnell – Whisper base (~80 MB)</option>
+          <option value="genau">Genau: Whisper small (~250 MB)</option>
+          <option value="schnell">Schnell: Whisper base (~80 MB)</option>
         </select>
       </label>
 
@@ -610,7 +611,7 @@ function SettingsCard({
           <span className="chip bg-lav/50 text-lav-ink">eigener API-Key</span>
         </label>
         <p className="mb-3 mt-1.5 text-xs leading-relaxed text-mut">
-          Korrigiert falsch erkannte Wörter anhand des Kontexts – wie beim
+          Korrigiert falsch erkannte Wörter anhand des Kontexts, wie beim
           Original. Dein Key bleibt nur in diesem Browser gespeichert und wird
           ausschließlich direkt an die Claude-API gesendet (console.anthropic.com).
         </p>
@@ -627,8 +628,8 @@ function SettingsCard({
       <div className="sm:col-span-2">
         <p className="mb-1.5 text-sm font-semibold">Persönliches Wörterbuch</p>
         <p className="mb-3 text-xs leading-relaxed text-mut">
-          Namen und Fachbegriffe, die die Erkennung falsch schreibt – Klartext
-          ersetzt sie automatisch (z.&nbsp;B. „wisper flow“ → „Wispr Flow“).
+          Namen und Fachbegriffe, die die Erkennung falsch schreibt. Klartext
+          ersetzt sie automatisch, zum Beispiel „wisper flow“ zu „Wispr Flow“.
         </p>
         <div className="flex flex-wrap gap-2">
           <input

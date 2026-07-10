@@ -242,7 +242,8 @@ export default function UploadPanel({
         </div>
         <p className="font-display text-2xl tracking-tight">Sprachaufnahme hierher ziehen</p>
         <p className="mt-1 text-sm text-mut">
-          Sprachmemos, Meetings, Sprachnachrichten – MP3, M4A, WAV, OGG, WebM
+          Sprachmemos, Meetings oder Sprachnachrichten als MP3, M4A, WAV, OGG
+          oder WebM.
         </p>
         <button
           onClick={() => inputRef.current?.click()}
@@ -273,10 +274,10 @@ export default function UploadPanel({
       </div>
 
       <p className="text-center text-xs text-mut">
-        Läuft komplett lokal in deinem Browser – die Aufnahme wird nirgendwohin
-        hochgeladen. Beim ersten Mal lädt Klartext einmalig ein Whisper-Modell
-        (~80–250&nbsp;MB je nach Genauigkeit in den Einstellungen), danach ist es
-        gecacht.
+        Alles läuft komplett lokal in deinem Browser. Die Aufnahme wird
+        nirgendwohin hochgeladen. Beim ersten Mal lädt Klartext einmalig ein
+        Whisper-Modell von etwa 80 bis 250&nbsp;MB, je nach gewählter
+        Genauigkeit. Danach ist es gecacht.
       </p>
 
       {/* Ergebnisliste */}

@@ -14,7 +14,7 @@ const garamond = EB_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "Klartext – Sprich. Der Rest ist Text.",
+  title: "Klartext. Sprich. Der Rest ist Text.",
   description:
     "Diktiere live in deiner Sprache oder lade Sprachaufnahmen hoch und erhalte sauberen, kopierfertigen Text. Kostenlos, privat, direkt im Browser.",
   applicationName: "Klartext",

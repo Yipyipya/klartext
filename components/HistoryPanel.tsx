@@ -36,7 +36,7 @@ export default function HistoryPanel({
 
   const tiles = [
     { label: "Wörter gesamt", value: stats.totalWords.toLocaleString("de-DE") },
-    { label: "Ø Tempo", value: stats.avgWpm ? `${stats.avgWpm} WPM` : "–" },
+    { label: "Ø Tempo", value: stats.avgWpm ? `${stats.avgWpm} WPM` : "keins" },
     { label: "Tage-Serie", value: `${stats.streakDays} 🔥` },
     { label: "Aufnahmen", value: String(stats.entries) },
   ];
@@ -84,8 +84,8 @@ export default function HistoryPanel({
         >
           <p className="font-display text-2xl tracking-tight">Noch nichts diktiert</p>
           <p className="mt-1 text-sm text-mut">
-            Jedes Diktat und jede transkribierte Datei landet automatisch hier –
-            nur auf deinem Gerät.
+            Jedes Diktat und jede transkribierte Datei landet automatisch hier.
+            Alles bleibt nur auf deinem Gerät.
           </p>
         </div>
       )}
