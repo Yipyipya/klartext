@@ -226,24 +226,27 @@ export default function UploadPanel({
           setDragOver(false);
           addFiles(e.dataTransfer.files);
         }}
-        className={`rounded-[32px] border-2 border-dashed p-10 text-center transition-colors ${
-          dragOver ? "border-ember bg-ember/10" : "border-ink/40 bg-surface"
+        className={`kt-card !rounded-[32px] p-10 text-center transition-all duration-200 ${
+          dragOver
+            ? "!border-ember bg-ember-soft scale-[1.01]"
+            : ""
         }`}
+        style={{ borderStyle: "dashed", borderWidth: "1.5px" }}
       >
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-ink bg-lav text-ink">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-ember to-ember-2 text-white shadow-[var(--sh-glow)]">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 17V4" />
             <path d="m6 10 6-6 6 6" />
             <path d="M4 20h16" />
           </svg>
         </div>
-        <p className="font-display text-2xl">Sprachaufnahme hierher ziehen</p>
+        <p className="font-display text-2xl tracking-tight">Sprachaufnahme hierher ziehen</p>
         <p className="mt-1 text-sm text-mut">
           Sprachmemos, Meetings, Sprachnachrichten – MP3, M4A, WAV, OGG, WebM
         </p>
         <button
           onClick={() => inputRef.current?.click()}
-          className="mt-5 rounded-full border-2 border-ink bg-lav px-6 py-2.5 text-sm font-bold text-[#1a1a1a] shadow-[3px_3px_0_var(--ink)] transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none"
+          className="btn btn-primary mt-5 px-6 py-2.5 text-sm"
         >
           Dateien auswählen
         </button>
@@ -263,7 +266,7 @@ export default function UploadPanel({
             type="checkbox"
             checked={autoLang}
             onChange={(e) => setAutoLang(e.target.checked)}
-            className="h-4 w-4 accent-[var(--teal)]"
+            className="h-4 w-4 accent-[var(--ember)]"
           />
           Sprache automatisch erkennen
         </label>
@@ -278,19 +281,16 @@ export default function UploadPanel({
 
       {/* Ergebnisliste */}
       {items.map((it) => (
-        <div
-          key={it.id}
-          className="rounded-[24px] border-2 border-ink bg-surface p-5"
-        >
+        <div key={it.id} className="kt-card pop p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="max-w-full truncate text-sm font-bold">{it.name}</p>
+            <p className="max-w-full truncate text-sm font-semibold">{it.name}</p>
             <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              className={`chip ${
                 it.status === "fertig"
-                  ? "bg-teal text-teal-ink"
+                  ? "bg-teal/12 text-teal"
                   : it.status === "fehler"
-                    ? "bg-ember/20 text-ember-deep"
-                    : "bg-lav text-[#1a1a1a]"
+                    ? "bg-ember-soft text-ember-2"
+                    : "bg-lav/50 text-lav-ink"
               }`}
             >
               {STATUS_LABEL[it.status]}
@@ -298,21 +298,21 @@ export default function UploadPanel({
             </span>
           </div>
           {it.status !== "fertig" && it.status !== "fehler" && (
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-line">
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
               <div
-                className="h-full rounded-full bg-ember transition-all"
+                className="h-full rounded-full bg-gradient-to-r from-ember to-ember-2 transition-all duration-300"
                 style={{
                   width:
                     it.status === "modell" && it.detail
                       ? it.detail.replace(" %", "%")
-                      : it.status === "transkribiert"
+                      : it.status === "transkribiert" || it.status === "feinschliff"
                         ? "90%"
                         : "15%",
                 }}
               />
             </div>
           )}
-          {it.error && <p className="mt-3 text-sm text-ember-deep">{it.error}</p>}
+          {it.error && <p className="mt-3 text-sm text-ember-2">{it.error}</p>}
           {it.text && (
             <>
               <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed">
@@ -321,7 +321,7 @@ export default function UploadPanel({
               <div className="mt-3 flex items-center gap-3 text-xs text-mut">
                 <button
                   onClick={() => onCopy(it.text!)}
-                  className="rounded-full border-2 border-ink bg-surface px-4 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-lav hover:text-[#1a1a1a]"
+                  className="btn btn-secondary px-4 py-1.5 text-xs"
                 >
                   Kopieren
                 </button>

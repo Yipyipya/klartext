@@ -241,18 +241,18 @@ export default function Home() {
   return (
     <div className="flex min-h-screen flex-col">
       {/* ---------- Header ---------- */}
-      <header className="sticky top-0 z-20 border-b border-line bg-bg/90 backdrop-blur">
+      <header className="kt-glass sticky top-0 z-20 border-b border-line">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-3">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-ink bg-ember text-[#1a1a1a]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-b from-ember to-ember-2 text-white shadow-[var(--sh-glow)]">
               <LogoBars />
             </span>
-            <span className="hidden font-display text-2xl tracking-tight sm:inline">
+            <span className="hidden font-display text-[1.65rem] leading-none tracking-tight sm:inline">
               Klartext
             </span>
           </div>
 
-          <nav className="ml-auto flex items-center gap-1 rounded-full border-2 border-ink bg-surface p-1">
+          <nav className="seg ml-auto">
             {(
               [
                 ["diktat", "Diktat"],
@@ -263,9 +263,8 @@ export default function Home() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors sm:px-3.5 sm:text-sm ${
-                  tab === key ? "bg-ink text-bg" : "text-ink hover:bg-line/60"
-                }`}
+                data-active={tab === key}
+                className="seg-item sm:px-3.5 sm:text-sm"
               >
                 {label}
               </button>
@@ -275,18 +274,15 @@ export default function Home() {
           <button
             onClick={toggleTheme}
             aria-label="Design wechseln"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-ink bg-surface text-ink transition-colors hover:bg-lav hover:text-[#1a1a1a]"
+            className="icon-btn shrink-0"
           >
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
           <button
             onClick={() => setShowSettings((v) => !v)}
             aria-label="Einstellungen"
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-ink transition-colors ${
-              showSettings
-                ? "bg-ink text-bg"
-                : "bg-surface text-ink hover:bg-lav hover:text-[#1a1a1a]"
-            }`}
+            data-active={showSettings}
+            className="icon-btn shrink-0"
           >
             <GearIcon />
           </button>
@@ -295,7 +291,7 @@ export default function Home() {
 
       {/* ---------- Einstellungen ---------- */}
       {showSettings && (
-        <div className="mx-auto w-full max-w-3xl px-4 pt-4">
+        <div className="pop mx-auto w-full max-w-3xl px-4 pt-4">
           <SettingsCard settings={settings} setSettings={setSettings} />
         </div>
       )}
@@ -303,32 +299,43 @@ export default function Home() {
       {/* ---------- Inhalt ---------- */}
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-44 pt-6">
         {tab === "diktat" && (
-          <div className="space-y-4">
-            <div className="text-center">
-              <h1 className="font-display text-4xl sm:text-5xl">
-                Sprich. Der Rest ist Text.
+          <div className="space-y-5">
+            <div className="rise rise-1 text-center">
+              <span className="chip mx-auto mb-4 border border-line bg-surface/70 text-ink-soft shadow-[var(--sh-sm)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-ember" />
+                Privat · direkt im Browser
+              </span>
+              <h1 className="font-display text-[2.6rem] leading-[1.05] tracking-tight sm:text-[3.4rem]">
+                Sprich.{" "}
+                <span className="bg-gradient-to-r from-ember to-ember-2 bg-clip-text text-transparent">
+                  Der Rest ist Text.
+                </span>
               </h1>
-              <p className="mt-2 text-sm text-mut">
+              <p className="mx-auto mt-3 max-w-lg text-[15px] leading-relaxed text-mut">
                 Diktiere hier, kopiere mit einem Klick – und füge den Text in
-                jeder App ein. Etwa 4× schneller als Tippen.
+                jeder App ein. Rund 4× schneller als Tippen.
               </p>
             </div>
 
             {!d.supported && (
-              <div className="rounded-[24px] border-2 border-ink bg-lav p-4 text-sm text-[#1a1a1a]">
+              <div className="kt-hair rounded-3xl bg-lav/40 p-4 text-sm text-lav-ink">
                 Dein Browser unterstützt kein Live-Diktat (z.&nbsp;B. Firefox).
                 Nutze Chrome, Edge oder Safari – oder transkribiere Aufnahmen im
                 Tab <b>Dateien</b>, das funktioniert überall.
               </div>
             )}
             {d.error && (
-              <div className="rounded-[24px] border-2 border-ink bg-ember/15 p-4 text-sm">
+              <div className="kt-hair rounded-3xl bg-ember-soft p-4 text-sm text-ink">
                 {d.error}
               </div>
             )}
 
             {/* Editor-Karte */}
-            <div className="rounded-[32px] border-2 border-ink bg-surface p-6 shadow-[5px_5px_0_var(--ink)]">
+            <div
+              className={`kt-card rise rise-2 p-6 transition-shadow duration-300 sm:p-7 ${
+                d.listening ? "kt-elevated" : ""
+              }`}
+            >
               {d.listening ? (
                 <div className="min-h-[38vh] whitespace-pre-wrap text-lg leading-relaxed">
                   {d.finalText}
@@ -341,24 +348,25 @@ export default function Home() {
                   value={d.finalText}
                   onChange={(e) => d.setFinalText(e.target.value)}
                   placeholder="Halte die Leertaste gedrückt oder tippe unten auf „Diktieren“ – und sprich einfach los …"
-                  className="min-h-[38vh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none placeholder:text-mut/70"
+                  className="min-h-[38vh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none placeholder:text-mut/60"
                 />
               )}
 
-              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-                <span className="rounded-full bg-teal px-3 py-1 text-xs font-semibold text-teal-ink">
+              <div className="mt-4 flex flex-wrap items-center gap-2.5 border-t border-line pt-4">
+                <span className="chip bg-teal/12 text-teal">
+                  <span className="h-1.5 w-1.5 rounded-full bg-teal" />
                   {langLabel}
                 </span>
-                <span className="text-xs text-mut">{words} Wörter</span>
+                <span className="text-xs font-medium text-mut">{words} Wörter</span>
                 {lastRaw && lastRaw !== d.finalText && !d.listening && (
                   <button
                     onClick={() => setShowRaw((v) => !v)}
-                    className="text-xs font-semibold text-mut underline-offset-2 hover:text-ink hover:underline"
+                    className="text-xs font-semibold text-mut underline-offset-4 transition-colors hover:text-ink hover:underline"
                   >
                     {showRaw ? "Original ausblenden" : "Original anzeigen"}
                   </button>
                 )}
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex items-center gap-1.5">
                   <button
                     onClick={() => {
                       d.setFinalText("");
@@ -366,23 +374,24 @@ export default function Home() {
                       setShowRaw(false);
                     }}
                     disabled={!d.finalText}
-                    className="rounded-full px-4 py-2 text-xs font-bold text-mut transition-colors hover:text-ink disabled:opacity-40"
+                    className="btn btn-ghost px-4 py-2 text-xs"
                   >
                     Leeren
                   </button>
                   <button
                     onClick={() => copy(d.finalText)}
                     disabled={!d.finalText}
-                    className="rounded-full border-2 border-ink bg-lav px-5 py-2 text-xs font-bold text-[#1a1a1a] shadow-[3px_3px_0_var(--ink)] transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none disabled:opacity-40 disabled:shadow-none"
+                    className="btn btn-primary px-5 py-2 text-xs"
                   >
+                    <CopyIcon />
                     Kopieren
                   </button>
                 </div>
               </div>
 
               {showRaw && lastRaw && (
-                <div className="mt-3 rounded-2xl bg-line/40 p-4 text-sm text-mut">
-                  <p className="mb-1 text-[10px] font-bold uppercase tracking-wider">
+                <div className="pop mt-3 rounded-2xl bg-surface-2 p-4 text-sm text-mut kt-hair">
+                  <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-mut">
                     Original (ohne Klartext-Aufräumen)
                   </p>
                   <p className="whitespace-pre-wrap">{lastRaw}</p>
@@ -399,23 +408,29 @@ export default function Home() {
         )}
 
         {tab === "dateien" && (
-          <div className="space-y-4">
-            <div className="text-center">
-              <h1 className="font-display text-4xl">Aufnahmen transkribieren</h1>
-              <p className="mt-2 text-sm text-mut">
+          <div className="space-y-5">
+            <div className="rise rise-1 text-center">
+              <h1 className="font-display text-[2.3rem] leading-tight tracking-tight sm:text-[2.8rem]">
+                Aufnahmen transkribieren
+              </h1>
+              <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-mut">
                 Sprachmemos, Meetings oder Sprachnachrichten – privat, direkt
                 auf deinem Gerät.
               </p>
             </div>
-            <UploadPanel settings={settings} onDone={onUploadDone} onCopy={copy} />
+            <div className="rise rise-2">
+              <UploadPanel settings={settings} onDone={onUploadDone} onCopy={copy} />
+            </div>
           </div>
         )}
 
         {tab === "verlauf" && (
-          <div className="space-y-4">
-            <div className="text-center">
-              <h1 className="font-display text-4xl">Dein Verlauf</h1>
-              <p className="mt-2 text-sm text-mut">
+          <div className="space-y-5">
+            <div className="rise rise-1 text-center">
+              <h1 className="font-display text-[2.3rem] leading-tight tracking-tight sm:text-[2.8rem]">
+                Dein Verlauf
+              </h1>
+              <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-mut">
                 Alles bleibt lokal auf diesem Gerät gespeichert.
               </p>
             </div>
@@ -430,11 +445,14 @@ export default function Home() {
       </main>
 
       {/* ---------- Schwebende Diktier-Pill ---------- */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4">
+      <div className="pointer-events-none fixed inset-x-0 bottom-7 z-30 flex justify-center px-4">
         <div className="pointer-events-auto">
           {d.listening ? (
-            <div className="rec-pulse flex items-center gap-3 rounded-full border-2 border-ink bg-ink px-4 py-2.5 text-bg">
-              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-ember" />
+            <div className="rec-halo pop flex items-center gap-3 rounded-full bg-ink px-4 py-2.5 text-surface">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ember opacity-70" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-ember" />
+              </span>
               <Waveform stream={d.stream} className="h-6 w-28 text-ember" />
               <span className="w-10 text-center font-mono text-sm tabular-nums">
                 {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
@@ -442,7 +460,7 @@ export default function Home() {
               <button
                 onClick={finishDictation}
                 aria-label="Aufnahme beenden"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-ember text-[#1a1a1a] transition-transform hover:scale-105"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-b from-ember to-ember-2 text-white transition-transform hover:scale-105 active:scale-95"
               >
                 <StopIcon />
               </button>
@@ -450,12 +468,12 @@ export default function Home() {
           ) : (
             <button
               onClick={startDictation}
-              className="flex items-center gap-2.5 rounded-full border-2 border-ink bg-surface py-2.5 pl-3 pr-5 shadow-[4px_4px_0_var(--ink)] transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none"
+              className="kt-glass group flex items-center gap-2.5 rounded-full border border-line py-2.5 pl-2.5 pr-5 shadow-[var(--sh-lg)] transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ember text-[#1a1a1a]">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-b from-ember to-ember-2 text-white shadow-[var(--sh-glow)] transition-transform duration-200 group-hover:scale-105">
                 <MicIcon />
               </span>
-              <span className="text-sm font-bold">Diktieren</span>
+              <span className="text-sm font-bold text-ink">Diktieren</span>
               <span className="hidden text-xs text-mut sm:inline">
                 Leertaste halten
               </span>
@@ -467,22 +485,22 @@ export default function Home() {
       {/* ---------- Toast ---------- */}
       {toast && (
         <div className="fixed inset-x-0 top-16 z-50 flex justify-center px-4">
-          <div className="rounded-full border-2 border-ink bg-ink px-5 py-2 text-sm font-semibold text-bg">
+          <div className="pop rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-surface shadow-[var(--sh-lg)]">
             {toast}
           </div>
         </div>
       )}
 
       {/* ---------- Footer ---------- */}
-      <footer className="border-t border-line pb-28 pt-5">
-        <div className="mx-auto max-w-3xl px-4 text-center text-xs text-mut">
+      <footer className="pb-32 pt-6">
+        <div className="mx-auto max-w-3xl px-4 text-center text-xs leading-relaxed text-mut">
           <p>
-            Klartext läuft komplett in deinem Browser – keine Konten, keine
-            Server, keine Kosten. Teile einfach den Link mit Freunden. 💜
+            Klartext läuft direkt in deinem Browser – keine Konten, keine
+            Kosten. Teile einfach den Link mit Freunden.
           </p>
           <p className="mt-1">
-            Tipp: Über das Browser-Menü „Zum Startbildschirm hinzufügen“ /
-            „App installieren“ wird Klartext zur App auf jedem Gerät.
+            Tipp: Über „Zum Startbildschirm hinzufügen“ / „App installieren“
+            wird Klartext zur App auf jedem Gerät.
           </p>
         </div>
       </footer>
@@ -513,13 +531,13 @@ function SettingsCard({
   };
 
   return (
-    <div className="grid gap-5 rounded-[24px] border-2 border-ink bg-surface p-5 sm:grid-cols-2">
+    <div className="kt-card grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
       <label className="block text-sm">
-        <span className="mb-1.5 block font-bold">Sprache</span>
+        <span className="mb-1.5 block font-semibold">Sprache</span>
         <select
           value={settings.lang}
           onChange={(e) => setSettings((s) => ({ ...s, lang: e.target.value }))}
-          className="w-full rounded-xl border-2 border-ink bg-surface px-3 py-2 outline-none"
+          className="field"
         >
           {LANGUAGES.map((l) => (
             <option key={l.code} value={l.code}>
@@ -530,7 +548,7 @@ function SettingsCard({
       </label>
 
       <label className="block text-sm">
-        <span className="mb-1.5 block font-bold">Klartext-Aufräumen</span>
+        <span className="mb-1.5 block font-semibold">Klartext-Aufräumen</span>
         <select
           value={settings.cleanup}
           onChange={(e) =>
@@ -539,7 +557,7 @@ function SettingsCard({
               cleanup: e.target.value as Settings["cleanup"],
             }))
           }
-          className="w-full rounded-xl border-2 border-ink bg-surface px-3 py-2 outline-none"
+          className="field"
         >
           <option value="aus">Aus – Rohtranskript behalten</option>
           <option value="sanft">Sanft – Füllwörter & Interpunktion</option>
@@ -547,20 +565,8 @@ function SettingsCard({
         </select>
       </label>
 
-      <label className="flex items-center gap-2.5 text-sm font-semibold">
-        <input
-          type="checkbox"
-          checked={settings.autoCopy}
-          onChange={(e) =>
-            setSettings((s) => ({ ...s, autoCopy: e.target.checked }))
-          }
-          className="h-4 w-4 accent-[var(--teal)]"
-        />
-        Nach dem Diktat automatisch kopieren
-      </label>
-
       <label className="block text-sm">
-        <span className="mb-1.5 block font-bold">
+        <span className="mb-1.5 block font-semibold">
           Genauigkeit (Datei-Transkription)
         </span>
         <select
@@ -571,30 +577,42 @@ function SettingsCard({
               whisperModel: e.target.value as Settings["whisperModel"],
             }))
           }
-          className="w-full rounded-xl border-2 border-ink bg-surface px-3 py-2 outline-none"
+          className="field"
         >
           <option value="genau">Genau – Whisper small (~250 MB)</option>
           <option value="schnell">Schnell – Whisper base (~80 MB)</option>
         </select>
       </label>
 
-      <div className="sm:col-span-2 rounded-2xl border border-line bg-bg/60 p-4">
-        <label className="flex items-center gap-2.5 text-sm font-semibold">
+      <label className="flex cursor-pointer items-center gap-2.5 self-end pb-2.5 text-sm font-semibold">
+        <input
+          type="checkbox"
+          checked={settings.autoCopy}
+          onChange={(e) =>
+            setSettings((s) => ({ ...s, autoCopy: e.target.checked }))
+          }
+          className="h-4 w-4 accent-[var(--ember)]"
+        />
+        Nach dem Diktat automatisch kopieren
+      </label>
+
+      <div className="kt-hair rounded-2xl bg-surface-2 p-4 sm:col-span-2">
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold">
           <input
             type="checkbox"
             checked={settings.polish}
             onChange={(e) =>
               setSettings((s) => ({ ...s, polish: e.target.checked }))
             }
-            className="h-4 w-4 accent-[var(--teal)]"
+            className="h-4 w-4 accent-[var(--ember)]"
           />
-          KI-Feinschliff mit Claude (eigener API-Key)
+          KI-Feinschliff mit Claude
+          <span className="chip bg-lav/50 text-lav-ink">eigener API-Key</span>
         </label>
-        <p className="mb-3 mt-1.5 text-xs text-mut">
+        <p className="mb-3 mt-1.5 text-xs leading-relaxed text-mut">
           Korrigiert falsch erkannte Wörter anhand des Kontexts – wie beim
           Original. Dein Key bleibt nur in diesem Browser gespeichert und wird
-          ausschließlich direkt an die Claude-API gesendet. Key erstellen:
-          console.anthropic.com
+          ausschließlich direkt an die Claude-API gesendet (console.anthropic.com).
         </p>
         <input
           type="password"
@@ -602,13 +620,13 @@ function SettingsCard({
           onChange={(e) => setSettings((s) => ({ ...s, apiKey: e.target.value }))}
           placeholder="sk-ant-…"
           autoComplete="off"
-          className="w-full rounded-xl border-2 border-ink bg-surface px-3 py-2 text-sm outline-none"
+          className="field text-sm"
         />
       </div>
 
       <div className="sm:col-span-2">
-        <p className="mb-1.5 text-sm font-bold">Persönliches Wörterbuch</p>
-        <p className="mb-3 text-xs text-mut">
+        <p className="mb-1.5 text-sm font-semibold">Persönliches Wörterbuch</p>
+        <p className="mb-3 text-xs leading-relaxed text-mut">
           Namen und Fachbegriffe, die die Erkennung falsch schreibt – Klartext
           ersetzt sie automatisch (z.&nbsp;B. „wisper flow“ → „Wispr Flow“).
         </p>
@@ -617,19 +635,19 @@ function SettingsCard({
             value={from}
             onChange={(e) => setFrom(e.target.value)}
             placeholder="erkannt als …"
-            className="min-w-0 flex-1 rounded-xl border-2 border-ink bg-surface px-3 py-2 text-sm outline-none"
+            className="field min-w-0 flex-1 text-sm"
           />
           <input
             value={to}
             onChange={(e) => setTo(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addEntry()}
             placeholder="soll heißen …"
-            className="min-w-0 flex-1 rounded-xl border-2 border-ink bg-surface px-3 py-2 text-sm outline-none"
+            className="field min-w-0 flex-1 text-sm"
           />
           <button
             onClick={addEntry}
             aria-label="Wörterbuch-Eintrag hinzufügen"
-            className="rounded-xl border-2 border-ink bg-lav px-4 py-2 text-sm font-bold text-[#1a1a1a]"
+            className="btn btn-primary px-4 text-lg leading-none"
           >
             +
           </button>
@@ -639,7 +657,7 @@ function SettingsCard({
             {settings.dictionary.map((en, i) => (
               <span
                 key={`${en.from}-${i}`}
-                className="flex items-center gap-1.5 rounded-full border-2 border-ink bg-bg px-3 py-1 text-xs"
+                className="chip kt-hair bg-surface-2 text-xs"
               >
                 <span className="text-mut">{en.from}</span> → <b>{en.to}</b>
                 <button
@@ -650,7 +668,7 @@ function SettingsCard({
                       dictionary: s.dictionary.filter((_, j) => j !== i),
                     }))
                   }
-                  className="ml-1 text-mut hover:text-ember-deep"
+                  className="ml-0.5 text-mut transition-colors hover:text-ember-2"
                 >
                   ×
                 </button>
@@ -667,9 +685,18 @@ function SettingsCard({
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px]">
+    <kbd className="rounded-md bg-surface px-1.5 py-0.5 font-mono text-[10px] text-ink-soft shadow-[var(--sh-sm)] kt-hair">
       {children}
     </kbd>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="12" height="12" rx="2.5" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
   );
 }
 
