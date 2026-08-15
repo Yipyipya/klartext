@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cleanTranscript } from "@/lib/cleanup";
 import { polishTranscript } from "@/lib/polish";
-import { countWords, WHISPER_MODELS, type Settings } from "@/lib/store";
+import { countWords, LANGUAGES, WHISPER_MODELS, type Settings } from "@/lib/store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -42,13 +42,21 @@ const STATUS_LABEL: Record<Status, string> = {
   fehler: "Fehler",
 };
 
+/** Der Browser konnte die Datei nicht dekodieren (z. B. Apple Lossless in Chrome). */
+class DecodeError extends Error {}
+
 async function decodeAudio(file: File): Promise<{ pcm: Float32Array; duration: number }> {
   const buf = await file.arrayBuffer();
   const AC = window.AudioContext || (window as any).webkitAudioContext;
   // Whisper erwartet 16 kHz mono – der AudioContext resampled beim Dekodieren
   const ctx = new AC({ sampleRate: 16000 });
   try {
-    const audio: AudioBuffer = await ctx.decodeAudioData(buf);
+    let audio: AudioBuffer;
+    try {
+      audio = await ctx.decodeAudioData(buf);
+    } catch (err) {
+      throw new DecodeError(String((err as Error)?.message ?? err));
+    }
     const { numberOfChannels, length, duration } = audio;
     let pcm: Float32Array;
     if (numberOfChannels === 1) {
@@ -77,7 +85,9 @@ export default function UploadPanel({
 }) {
   const [items, setItems] = useState<Item[]>([]);
   const [dragOver, setDragOver] = useState(false);
-  const [autoLang, setAutoLang] = useState(true);
+  // Whisper braucht die Sprache vorgegeben: transformers.js erkennt sie nicht
+  // selbst, sondern fällt ohne Angabe stillschweigend auf Englisch zurück.
+  const [lang, setLang] = useState(settings.lang);
 
   const workerRef = useRef<Worker | null>(null);
   const queueRef = useRef<{ id: string; file: File }[]>([]);
@@ -85,9 +95,14 @@ export default function UploadPanel({
   const currentRef = useRef<string | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  const autoLangRef = useRef(autoLang);
-  autoLangRef.current = autoLang;
+  const langRef = useRef(lang);
+  langRef.current = lang;
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Einstellungen kommen erst nach der Hydration aus dem localStorage
+  useEffect(() => {
+    setLang(settings.lang);
+  }, [settings.lang]);
 
   const patch = (id: string, p: Partial<Item>) =>
     setItems((list) => list.map((it) => (it.id === id ? { ...it, ...p } : it)));
@@ -160,10 +175,11 @@ export default function UploadPanel({
       patch(next.id, { status: "liest" });
       const { pcm, duration } = await decodeAudio(next.file);
       patch(next.id, { status: "transkribiert" });
-      const lang = autoLangRef.current
-        ? null
-        : settingsRef.current.lang.split("-")[0];
-      const rawText = await transcribeInWorker(next.id, pcm, lang);
+      const rawText = await transcribeInWorker(
+        next.id,
+        pcm,
+        langRef.current.split("-")[0]
+      );
       let cleaned = cleanTranscript(rawText, settingsRef.current);
       const s = settingsRef.current;
       if (cleaned && s.polish && s.apiKey.trim()) {
@@ -187,7 +203,9 @@ export default function UploadPanel({
       patch(next.id, {
         status: "fehler",
         error:
-          "Diese Datei konnte nicht verarbeitet werden. Unterstützt sind gängige Audio-Formate (MP3, M4A, WAV, OGG, WebM).",
+          err instanceof DecodeError
+            ? "Dieses Audio kann der Browser nicht öffnen. Häufigste Ursache bei M4A: Apple Lossless (ALAC), das Chrome und Firefox nicht dekodieren können, etwa aus Sprachmemos mit der Qualitätsstufe „Lossless“. In Safari öffnen oder die Datei vorher als MP3 oder WAV exportieren."
+            : "Diese Datei konnte nicht verarbeitet werden. Unterstützt sind gängige Audio-Formate (MP3, M4A, WAV, OGG, WebM).",
       });
       console.error(err);
     } finally {
@@ -262,15 +280,24 @@ export default function UploadPanel({
             e.target.value = "";
           }}
         />
-        <label className="mt-5 flex items-center justify-center gap-2 text-xs text-mut">
-          <input
-            type="checkbox"
-            checked={autoLang}
-            onChange={(e) => setAutoLang(e.target.checked)}
-            className="h-4 w-4 accent-[var(--ember)]"
-          />
-          Sprache automatisch erkennen
+        <label className="mt-5 flex flex-wrap items-center justify-center gap-2 text-xs text-mut">
+          Gesprochene Sprache
+          <select
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+            className="field !w-auto !py-1.5 text-xs"
+          >
+            {LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.label}
+              </option>
+            ))}
+          </select>
         </label>
+        <p className="mx-auto mt-2 max-w-md text-[11px] leading-relaxed text-mut">
+          Whisper braucht die Sprache vorgegeben. Steht hier die falsche, wird
+          der Text übersetzt statt transkribiert.
+        </p>
       </div>
 
       <p className="text-center text-xs text-mut">
