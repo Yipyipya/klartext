@@ -54,6 +54,9 @@ behalten, der sanfte Modus soll die klare Terminänderung auflösen.
 - Anfang und Ende vergleichen, keine Auslassungen oder verdoppelten Übergänge.
 - Mac: Version 0.1.2 in Programme installieren, einmal starten, dann bei Gelegenheit
   abmelden/anmelden. Tray sichtbar, Shortcut bereit, Mikrofonanzeige aus.
+  Falls der Schlüsselbund für Klartext nachfragt, den Dialog selbst prüfen und
+  freigeben. Das Passwort nicht an Codex senden. Der Pakettest ohne manuelle
+  Freigabe konnte diesen Dialog nicht abschließen.
 - Windows: Version 0.1.2 installieren, Key eintragen, Diktat mit Strg+Umschalt+Leertaste,
   Einfügen und Anmeldung testen. Autostart ausschalten und prüfen, dass das respektiert wird.
 

@@ -35,9 +35,10 @@ const PLATFORMS: Platform[] = [
       "Sitzt oben in der Menüleiste und diktiert in jede App, in E-Mails, Slack, Notizen oder den Browser.",
     install: [
       "Die geladene .dmg-Datei per Doppelklick öffnen.",
-      "Klartext in den Ordner „Programme“ ziehen.",
-      "Beim ersten Start rechtsklicken und „Öffnen“ wählen, da die App nicht signiert ist.",
-      "Im Dialog Mikrofon und Bedienungshilfen erlauben, damit der Text an der Cursor-Position landet.",
+      "Klartext in den Ordner „Programme“ ziehen und eine ältere Version ersetzen.",
+      "Klartext öffnen. Die App ist noch nicht Apple-notarisiert; prüfe eventuelle Systemwarnungen und Schlüsselbund-Dialoge selbst.",
+      "Beim ersten Diktat Mikrofon und Bedienungshilfen erlauben, damit der Text an der Cursor-Position landet.",
+      "Im Menüleisten-Menü den Autostart-Status prüfen. Falls nötig unter Allgemein → Anmeldeobjekte hinzufügen.",
     ],
     shortcut: "⌥ + Leertaste",
   },
@@ -55,7 +56,7 @@ const PLATFORMS: Platform[] = [
       "Die geladene .exe-Datei per Doppelklick starten.",
       "Falls Windows warnt, auf „Weitere Informationen“ und dann „Trotzdem ausführen“ klicken, da die App nicht signiert ist.",
       "Dem Einrichtungsassistenten folgen, Klartext legt eine Verknüpfung im Startmenü an.",
-      "Beim ersten Start den Mikrofon-Zugriff erlauben.",
+      "Beim ersten Diktat den Mikrofon-Zugriff erlauben. Im Tray den Autostart-Status prüfen.",
     ],
     shortcut: "Strg + Umschalt + Leertaste",
   },
@@ -183,11 +184,9 @@ export default function DownloadPanel() {
       <div className="kt-hair rounded-3xl bg-lav/40 p-5 text-sm leading-relaxed text-lav-ink">
         <p className="font-semibold">Ein kurzer Hinweis zur Sicherheit</p>
         <p className="mt-1">
-          Beide Apps sind noch nicht mit einem kostenpflichtigen Zertifikat
-          signiert. Darum warnen macOS und Windows beim ersten Start. Das ist
-          normal für kleine, selbst gebaute Apps. Du öffnest sie einmal wie oben
-          beschrieben, danach starten sie ganz normal. Der Quellcode liegt
-          offen auf{" "}
+          Version 0.1.2 ist für persönliche Tests gedacht. Mac ist nur ad-hoc signiert
+          und nicht Apple-notarisiert; Windows hat noch kein vertrauenswürdiges
+          Herausgeberzertifikat. Lade die Apps nur aus diesem Projekt. Der Quellcode liegt auf{" "}
           <a
             href={REPO}
             className="font-semibold underline underline-offset-2 hover:text-ink"
@@ -197,13 +196,11 @@ export default function DownloadPanel() {
           , sodass jeder nachsehen kann, was die App tut.
         </p>
         <p className="mt-2">
-          Sollte macOS trotzdem melden, die App sei „beschädigt", einmal
-          Terminal öffnen und diesen Befehl ausführen, danach startet sie
-          normal:
+          Die installierte App startet standardmäßig bei der Anmeldung und bereitet
+          den gewählten Modus vor. Das Mikrofon bleibt aus. Der Autostart lässt sich
+          im Tray abschalten; macOS kann eine zusätzliche Freigabe verlangen.
+          Windows und die echte Anmeldung auf beiden Systemen müssen noch manuell getestet werden.
         </p>
-        <code className="mt-2 block overflow-x-auto rounded-xl bg-ink/85 px-3 py-2 font-mono text-xs text-surface">
-          xattr -cr /Applications/Klartext.app
-        </code>
       </div>
     </div>
   );

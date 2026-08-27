@@ -45,6 +45,9 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
   Wörterbuch und plattformübergreifende Autostart-Logik (OS-API gemockt).
 - Web-Produktionsbuild und TypeScript-Prüfung grün.
 - Electron-Smoke-Test bis zum geladenen Renderer grün, ohne Aufnahme/Autostart.
+- Zusätzlicher Startversuch des Mac-Pakets wartete auf eine Schlüsselbundfreigabe
+  für die neu signierte App und wurde beendet. Paket-Signaturprüfung ist grün;
+  tatsächlicher Erststart mit Freigabe bleibt ein manueller Abnahmepunkt.
 - Synthetische WAV: 199,26 Sekunden, 38.257.554 Bytes. Echter OpenAI-Upload im
   Browser erfolgreich, 394 Wörter, alle sechs Kontrollbegriffe, Anfang/Ende
   vorhanden. Bereichswechsel während der Verarbeitung erfolgreich.
@@ -70,4 +73,7 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 Bestehendes Projekt: Yipyipya/klartext, Vercel-Produktionszweig main.
 Adresse: https://klartext-adapt-learn.vercel.app
-Die Bereitstellung dieses Stands wird nach der Verifikation abgeschlossen.
+Funktionsstand 3e225713473be3e752cd7d68662b6bc0da114db1 auf main übernommen.
+Vercel-Produktion erfolgreich; normale Adresse im Browser geprüft, noindex und
+Downloadlinks bestätigt. GitHub-Release v0.1.2 mit beiden Installern bereitgestellt;
+hochgeladene SHA-256-Prüfsummen stimmen mit den lokalen Dateien überein.
