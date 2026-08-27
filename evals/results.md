@@ -66,3 +66,19 @@ Ergebnis mit zweistufiger Pipeline:
 - Defekte WAV ohne Samples: OpenAI-400-Meldung sichtbar statt generischem Fehler.
 - Echter Apple-Lossless-Upload, persönliche Sprachmemo und Windows-Laufzeit bleiben
   als manuelle Tests offen. Autostart-Code geprüft, echte Anmeldung noch nicht.
+
+## Safari-Diktat-Fix, 27. August 2026
+
+- Nutzervergleich: Mac weitgehend korrekt; Safari-Web deutlich schlechter bei
+  Interpunktion und Fachbegriffen (Next.js fehlte, HubSpot/Pipedrive getrennt,
+  n8n und Sigill falsch). API-Key laut Nutzer erneut eingetragen.
+- Bestätigter Codefehler: Recorder-Start konnte scheitern, während SpeechRecognition
+  weiterlief; Stop lieferte dann null. Die Seite behielt Browser-Text und konnte
+  diesen automatisch kopieren. API-Fehlerhinweise waren nur kurzlebige Toasts.
+  Die genaue Ursache des konkreten Safari-Diktats ist damit nicht bewiesen.
+- Fix: ein Aufnahmeweg im Qualitätsmodus, Format-Fallback, Abschlussdaten erhalten,
+  Fehler sichtbar, keine erfolgreiche Ausgabe ohne KI-Transkription. Feinschliff-
+  Fehler erhalten Rohtext mit Warnung; Retry ohne zweite Audioanfrage.
+- 32/32 automatisierte Tests bestanden, TypeScript und Produktionsbuild grün.
+  Browser-/Recorder- und API-Fehlerfälle sind gemockt, keine echten Safari-E2E-Tests.
+- Echter Safari-Sprachtest nach Bereitstellung noch offen. Keine Modelländerung.

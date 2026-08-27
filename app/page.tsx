@@ -7,8 +7,7 @@ import HistoryPanel from "@/components/HistoryPanel";
 import DownloadPanel from "@/components/DownloadPanel";
 import { useDictation } from "@/hooks/useDictation";
 import { cleanTranscript } from "@/lib/cleanup";
-import { transcribeWithOpenAI } from "@/lib/cloud-transcribe";
-import { refineTranscriptWithOpenAI } from "@/lib/refine-transcript";
+import { processQualityDictation, type QualityDictationJob } from "@/lib/process-dictation";
 import {
   DEFAULT_SETTINGS,
   LANGUAGES,
@@ -37,6 +36,9 @@ export default function Home() {
   const [lastRaw, setLastRaw] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [processingLabel, setProcessingLabel] = useState("Aufnahme abschließen …");
+  const [notice, setNotice] = useState<{ kind: "error" | "warning" | "success"; message: string } | null>(null);
+  const pendingJob = useRef<QualityDictationJob | null>(null);
   const processingRef = useRef(false);
 
   const d = useDictation(settings.lang, settings.transcriptionMode === "quality");
@@ -49,6 +51,7 @@ export default function Home() {
   const sessionStartWords = useRef(0);
   const sessionPrefix = useRef("");
   const sessionStartAt = useRef(0);
+  const sessionSettings = useRef(settings);
   const spaceHold = useRef(false);
   const listeningRef = useRef(false);
   listeningRef.current = d.listening;
@@ -105,58 +108,79 @@ export default function Home() {
       showToast("Live-Diktat wird von diesem Browser nicht unterstützt");
       return;
     }
+    const s = settingsRef.current;
+    if (s.transcriptionMode === "quality" && !s.openaiApiKey.trim()) {
+      setNotice({ kind: "error", message: "Für den Qualitätsmodus fehlt dein API-Key. Bitte ergänze ihn in den Einstellungen." });
+      setShowSettings(true);
+      return;
+    }
+    pendingJob.current = null;
+    setNotice(null);
     setShowRaw(false);
     setTab("diktat");
     sessionStartWords.current = countWords(finalRef.current);
     sessionPrefix.current = finalRef.current.trim();
     sessionStartAt.current = Date.now();
+    sessionSettings.current = { ...s, dictionary: [...s.dictionary] };
     void d.start();
   }, [d, showToast]);
+
+  const runQualityJob = useCallback(async (job: QualityDictationJob) => {
+    pendingJob.current = job;
+    try {
+      const result = await processQualityDictation(job, setProcessingLabel);
+      const text = [job.prefix, result.text].filter(Boolean).join(" ");
+      const raw = [job.prefix, result.raw].filter(Boolean).join(" ");
+      d.setFinalText(text);
+      setLastRaw(raw);
+      if (result.warning) {
+        setNotice({ kind: "warning", message: result.warning });
+        return;
+      }
+      pendingJob.current = null;
+      setHistory(addHistory({
+        id: crypto.randomUUID(), ts: Date.now(), source: "diktat", text, raw,
+        words: countWords(result.text), durationSec: Math.round(job.duration),
+      }));
+      setNotice({ kind: "success", message: job.settings.cleanup === "aus"
+        ? "Mit GPT Transcribe verarbeitet · ohne KI-Feinschliff."
+        : "Mit GPT Transcribe verarbeitet · KI-Feinschliff abgeschlossen." });
+      if (job.settings.autoCopy) void copy(text);
+    } catch (error) {
+      setNotice({ kind: "error", message: `${error instanceof Error ? error.message : "KI-Verarbeitung fehlgeschlagen."} Die Aufnahme bleibt für einen erneuten Versuch in diesem Tab erhalten. Nicht automatisch kopiert oder gespeichert.` });
+    }
+  }, [d, copy]);
+
+  const retryDictation = useCallback(async () => {
+    const job = pendingJob.current;
+    if (!job || processingRef.current || listeningRef.current) return;
+    processingRef.current = true;
+    setProcessing(true);
+    job.settings = { ...job.settings, openaiApiKey: settingsRef.current.openaiApiKey };
+    try { await runQualityJob(job); }
+    finally { processingRef.current = false; setProcessing(false); }
+  }, [runQualityJob]);
 
   const finishDictation = useCallback(async () => {
     if (!listeningRef.current || processingRef.current) return;
     processingRef.current = true;
     setProcessing(true);
+    setProcessingLabel("Aufnahme abschließen …");
     const duration = (Date.now() - sessionStartAt.current) / 1000;
     try {
       const audio = await d.stop();
+      const s = sessionSettings.current;
+      if (s.transcriptionMode === "quality") {
+        if (!audio?.size) throw new Error("Keine nutzbare Audioaufnahme vorhanden. Bitte erneut aufnehmen.");
+        await runQualityJob({ audio, settings: s, prefix: sessionPrefix.current, duration });
+        return;
+      }
       // Kurz warten, bis späte finale Ergebnisse der Erkennung eingetroffen sind
       await new Promise((resolve) => setTimeout(resolve, 350));
       const raw = finalRef.current;
-      const s = settingsRef.current;
-      let dictatedRaw = raw.slice(sessionPrefix.current.length).trim();
-      let usedCloudTranscription = false;
-
-      if (s.transcriptionMode === "quality" && audio && s.openaiApiKey.trim()) {
-        showToast("Transkription wird präzisiert …");
-        try {
-          dictatedRaw = await transcribeWithOpenAI(audio, {
-            apiKey: s.openaiApiKey,
-            language: s.lang,
-            dictionary: s.dictionary,
-            context: s.context,
-          });
-          usedCloudTranscription = true;
-        } catch (error) {
-          console.error(error);
-          showToast("Cloud-Transkription fehlgeschlagen. Browser-Text wurde behalten.");
-        }
-      } else if (s.transcriptionMode === "quality" && !s.openaiApiKey.trim()) {
-        setShowSettings(true);
-        showToast("Für beste Qualität fehlt noch dein OpenAI API-Key.");
-      }
-
+      const dictatedRaw = raw.slice(sessionPrefix.current.length).trim();
       const originalRaw = [sessionPrefix.current, dictatedRaw].filter(Boolean).join(" ");
-      if (usedCloudTranscription && s.cleanup !== "aus") {
-        try {
-          dictatedRaw = await refineTranscriptWithOpenAI(dictatedRaw, s.openaiApiKey);
-        } catch (error) {
-          console.error("Text-Feinschliff fehlgeschlagen, Transkription wird beibehalten:", error);
-        }
-      }
-
-      const combinedRaw = [sessionPrefix.current, dictatedRaw].filter(Boolean).join(" ");
-      const cleaned = cleanTranscript(combinedRaw, s);
+      const cleaned = cleanTranscript(originalRaw, s);
       const sessionWords = Math.max(
         0,
         countWords(cleaned) - sessionStartWords.current
@@ -179,11 +203,13 @@ export default function Home() {
         })
       );
       if (s.autoCopy) copy(final);
+    } catch (error) {
+      setNotice({ kind: "error", message: error instanceof Error ? error.message : "Aufnahme fehlgeschlagen. Bitte erneut versuchen." });
     } finally {
       processingRef.current = false;
       setProcessing(false);
     }
-  }, [d, copy, showToast]);
+  }, [d, copy, runQualityJob]);
 
   const toggleDictation = useCallback(() => {
     if (listeningRef.current) finishDictation();
@@ -306,9 +332,9 @@ export default function Home() {
           <p>
             {settings.transcriptionMode === "quality"
               ? settings.openaiApiKey
-                ? "Kontextbasierte Erkennung ist bereit."
+                ? "API-Key hinterlegt. Die Verbindung wird beim Diktat geprüft."
                 : "API-Key ergänzen, um den Qualitätsmodus zu aktivieren."
-              : "Whisper läuft vollständig auf diesem Gerät."}
+              : "Diktat per Browser-Erkennung. Dateien werden lokal mit Whisper verarbeitet."}
           </p>
         </div>
         <div className="sidebar-actions">
@@ -402,8 +428,23 @@ export default function Home() {
               </div>
             )}
             {d.error && (
-              <div className="kt-hair rounded-3xl bg-ember-soft p-4 text-sm text-ink">
+              <div role="alert" className="kt-hair rounded-3xl bg-ember-soft p-4 text-sm text-ink">
                 {d.error}
+              </div>
+            )}
+            {notice && (
+              <div role={notice.kind === "success" ? "status" : "alert"}
+                className={`kt-hair rounded-3xl p-4 text-sm text-ink ${notice.kind === "success" ? "bg-teal/12" : "bg-ember-soft"}`}>
+                <p>{notice.message}</p>
+                {pendingJob.current && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button onClick={retryDictation} disabled={processing || d.listening} className="btn btn-primary min-h-11 px-4 text-sm">
+                      {pendingJob.current.raw === undefined ? "Aufnahme erneut verarbeiten" : "KI-Feinschliff wiederholen"}
+                    </button>
+                    <button onClick={() => setShowSettings(true)} disabled={processing} className="btn btn-ghost min-h-11 px-4 text-sm">Einstellungen</button>
+                    <p className="w-full text-xs text-mut">Die Aufnahme bleibt bis zum nächsten Diktat oder Neuladen nur in diesem Tab erhalten. Erneute API-Versuche können Kosten verursachen.</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -416,13 +457,17 @@ export default function Home() {
               {d.listening ? (
                 <div className="min-h-[38vh] whitespace-pre-wrap text-lg leading-relaxed">
                   {d.finalText}
-                  {d.finalText && d.interim ? " " : ""}
-                  <span className="text-mut">{d.interim}</span>
-                  <span className="live-caret" />
+                  {sessionSettings.current.transcriptionMode === "quality" ? (
+                    <p className="mt-4 text-base text-mut">Aufnahme läuft. Im Qualitätsmodus erscheint der fertige Text nach dem Stoppen.</p>
+                  ) : (
+                    <>{d.finalText && d.interim ? " " : ""}<span className="text-mut">{d.interim}</span><span className="live-caret" /></>
+                  )}
                 </div>
               ) : (
                 <textarea
                   value={d.finalText}
+                  readOnly={processing}
+                  aria-label="Diktierter Text"
                   onChange={(e) => d.setFinalText(e.target.value)}
                   placeholder="Halte die Leertaste gedrückt oder tippe unten auf „Diktieren“ und sprich einfach los …"
                   className="min-h-[42vh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none placeholder:text-mut/60"
@@ -449,15 +494,17 @@ export default function Home() {
                       d.setFinalText("");
                       setLastRaw(null);
                       setShowRaw(false);
+                      pendingJob.current = null;
+                      setNotice(null);
                     }}
-                    disabled={!d.finalText}
+                    disabled={!d.finalText || processing || d.listening}
                     className="btn btn-ghost px-4 py-2 text-xs"
                   >
                     Leeren
                   </button>
                   <button
                     onClick={() => copy(d.finalText)}
-                    disabled={!d.finalText}
+                    disabled={!d.finalText || processing || d.listening}
                     className="btn btn-primary px-5 py-2 text-xs"
                   >
                     <CopyIcon />
@@ -547,7 +594,7 @@ export default function Home() {
           {processing ? (
             <div className="processing-pill pop" role="status" aria-live="polite">
               <span className="spinner" />
-              <span>Transkription wird präzisiert</span>
+              <span>{processingLabel}</span>
             </div>
           ) : d.listening ? (
             <div className="rec-halo pop flex items-center gap-3 rounded-full bg-ink px-4 py-2.5 text-surface">
@@ -626,7 +673,7 @@ function SettingsCard({
       <section className="settings-section">
         <div className="section-label">
           <span>Transkription</span>
-          <small>Wähle Qualität oder vollständige Offline-Nutzung</small>
+          <small>Wähle KI-Qualität oder Erkennung ohne eigenen API-Key</small>
         </div>
         <div className="mode-selector">
           <button
@@ -642,10 +689,14 @@ function SettingsCard({
             onClick={() => setSettings((s) => ({ ...s, transcriptionMode: "local" }))}
           >
             <span className="mode-icon"><DeviceIcon /></span>
-            <span><b>Lokal</b><small>Offline mit Whisper</small></span>
+            <span><b>Lokal</b><small>Dateien: Whisper · Diktat: Browser</small></span>
             <CheckIcon />
           </button>
         </div>
+
+        {settings.transcriptionMode === "local" && (
+          <p className="text-xs text-mut">Nur Datei-Uploads werden hier lokal mit Whisper verarbeitet. Die Browser-Spracherkennung für Diktate kann einen externen Sprachdienst verwenden.</p>
+        )}
 
         {settings.transcriptionMode === "quality" && (
           <div className="credential-box pop">

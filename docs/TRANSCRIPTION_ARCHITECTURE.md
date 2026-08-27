@@ -13,8 +13,26 @@ Der Qualitätsmodus ist der Standard für den täglichen Gebrauch.
 6. Im Web bleiben Ergebnis, Original und Verlauf lokal im Browser. Desktop fügt
    den Text an der Cursorposition ein und hält ihn in der Zwischenablage.
 
-Wenn der Text-Feinschliff ausfällt, bleibt die ursprüngliche Transkription als
-Fallback erhalten. Die zusätzliche Stufe läuft nicht im wortgetreuen Modus.
+Wenn der Text-Feinschliff ausfällt, bleibt die ursprüngliche Transkription erhalten.
+Im Web wird dies dauerhaft als Warnung angezeigt, nicht automatisch kopiert und
+noch nicht im Verlauf gespeichert. Ein erneuter Feinschliff nutzt den vorhandenen
+Rohtext, ohne die Audioanfrage zu wiederholen. Die zusätzliche Stufe läuft nicht
+im wortgetreuen Modus.
+
+Im Web startet der Qualitätsmodus ausschließlich MediaRecorder, ohne parallele
+Browser-Spracherkennung. Bevorzugt wird MP4/AAC, danach WebM/Opus und schließlich
+das Standardformat des Browsers. Konstruktor- und Startfehler probieren das nächste
+Format. Ohne Timeslice wird eine vollständige Aufnahme beim Stoppen abgegeben.
+Auch automatisch beendete Recorder behalten ihre finalen Daten; auf noch ausstehende
+Stop-Ereignisse wird höchstens zehn Sekunden gewartet. Leere Aufnahmen oder Fehler
+sind kein Erfolg. Es gibt keinen stillen Rückfall auf Browser-Text.
+
+Schlägt die Audioanfrage fehl, bleibt die Aufnahme nur im Arbeitsspeicher dieses
+Tabs für einen erneuten Versuch. Neuladen, Schließen oder ein neues Diktat verwirft
+sie. Ein geänderter API-Key wird beim Retry berücksichtigt. Erneute API-Anfragen
+können weitere Kosten verursachen. Modus, Sprache, Kontext und Wörterbuch werden
+für jede Aufnahme beim Start festgehalten. Erst ein vollständiges Ergebnis wird
+als Erfolg markiert, im Verlauf gespeichert und gegebenenfalls automatisch kopiert.
 
 In der Web-App liegt der persönliche API-Key im lokalen Browserspeicher. Das ist
 für die private Nutzung ohne eigenen Server pragmatisch, aber nicht für ein
@@ -23,10 +41,12 @@ mit den Sicherheitsfunktionen des Betriebssystems.
 
 ## Lokalmodus
 
-Der Lokalmodus nutzt Whisper über transformers.js. Audio verlässt das Gerät
-nicht. Beim ersten Einsatz wird das gewählte Modell geladen und anschließend
+Desktop-Diktate und Datei-Uploads nutzen im Lokalmodus Whisper über transformers.js.
+Dabei verlässt Audio das Gerät nicht. Beim ersten Einsatz wird das gewählte Modell geladen und anschließend
 gecacht. Dieser Modus ist privater, benötigt aber mehr lokalen Speicher und ist
-je nach Gerät langsamer und ungenauer.
+je nach Gerät langsamer und ungenauer. Web-Diktate im bisherigen „Lokal“-Modus
+nutzen dagegen die Browser Speech API. Diese kann einen externen Sprachdienst
+verwenden und garantiert keine Offline- oder geräteinterne Verarbeitung.
 
 ## Datei-Uploads
 
@@ -47,9 +67,10 @@ Auftrag neu und kann die bereits verarbeiteten Abschnitte erneut kosten.
 
 ## Echtzeitstufe zurückgestellt
 
-Die aktuelle Live-Vorschau der Web-App kommt noch aus der Browser Speech API.
-Die endgültige Transkription im Qualitätsmodus stammt immer aus der aufgenommenen
-Audiodatei. Auf Wunsch des Nutzers wird kein teureres Realtime-Modell eingebaut
+Eine Live-Vorschau per Browser Speech API gibt es nur im Browser-Erkennungsmodus.
+Der Qualitätsmodus zeigt während der Aufnahme einen Hinweis statt einer Vorschau;
+sein Text stammt ausschließlich aus der aufgenommenen Audiodatei. Auf Wunsch des
+Nutzers wird kein teureres Realtime-Modell eingebaut
 und die Endqualität nicht für schnellere Vorschauen abgesenkt. Eine spätere
 Realtime-Erweiterung muss optional bleiben und Kosten/Qualität transparent machen.
 Die bestehende Browser-Vorschau kann browserabhängig einen externen Sprachdienst
