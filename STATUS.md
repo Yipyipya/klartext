@@ -89,7 +89,9 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 Bestehendes Projekt: Yipyipya/klartext, Vercel-Produktionszweig main.
 Adresse: https://klartext-adapt-learn.vercel.app
-Funktionsstand 3e225713473be3e752cd7d68662b6bc0da114db1 auf main übernommen.
-Vercel-Produktion erfolgreich; normale Adresse im Browser geprüft, noindex und
-Downloadlinks bestätigt. GitHub-Release v0.1.2 mit beiden Installern bereitgestellt;
+Safari-Fix e855ded209f78086d1b85121f428930251fbfd51 auf main übernommen.
+Vercel-Produktion erfolgreich (Deployment 6119223758); normale Adresse im Browser
+mit neuem Diktat-Editor geprüft. Der echte Safari-Sprachtest bleibt offen.
+noindex und Downloadlinks wurden beim vorherigen Release bestätigt.
+GitHub-Release v0.1.2 mit beiden unveränderten Installern bereitgestellt;
 hochgeladene SHA-256-Prüfsummen stimmen mit den lokalen Dateien überein.
