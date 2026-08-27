@@ -15,11 +15,11 @@ export interface Dictation {
   stream: MediaStream | null;
   startedAt: number | null;
   start: () => Promise<void>;
-  stop: () => void;
+  stop: () => Promise<Blob | null>;
   setFinalText: (updater: string | ((prev: string) => string)) => void;
 }
 
-export function useDictation(lang: string): Dictation {
+export function useDictation(lang: string, allowAudioOnly = false): Dictation {
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
   const [finalText, setFinalText] = useState("");
@@ -29,16 +29,20 @@ export function useDictation(lang: string): Dictation {
   const [startedAt, setStartedAt] = useState<number | null>(null);
 
   const recRef = useRef<Recognition>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const activeRef = useRef(false);
   const langRef = useRef(lang);
   langRef.current = lang;
 
   useEffect(() => {
     const w = window as any;
-    setSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
-  }, []);
+    const hasBrowserRecognition = !!(w.SpeechRecognition || w.webkitSpeechRecognition);
+    const canRecordAudio = !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
+    setSupported(hasBrowserRecognition || (allowAudioOnly && canRecordAudio));
+  }, [allowAudioOnly]);
 
-  const stop = useCallback(() => {
+  const stop = useCallback(async (): Promise<Blob | null> => {
     activeRef.current = false;
     setListening(false);
     setStartedAt(null);
@@ -48,17 +52,36 @@ export function useDictation(lang: string): Dictation {
     } catch {
       /* war bereits gestoppt */
     }
+    const recorder = recorderRef.current;
+    const audio = await new Promise<Blob | null>((resolve) => {
+      if (!recorder || recorder.state === "inactive") {
+        resolve(null);
+        return;
+      }
+      recorder.addEventListener(
+        "stop",
+        () => {
+          const type = recorder.mimeType || audioChunksRef.current[0]?.type || "audio/webm";
+          resolve(new Blob(audioChunksRef.current, { type }));
+        },
+        { once: true }
+      );
+      recorder.stop();
+    });
+    recorderRef.current = null;
+    audioChunksRef.current = [];
     setStream((s) => {
       s?.getTracks().forEach((t) => t.stop());
       return null;
     });
+    return audio;
   }, []);
 
   const start = useCallback(async () => {
     if (activeRef.current) return;
     const w = window as any;
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!Ctor) {
+    if (!Ctor && !allowAudioOnly) {
       setSupported(false);
       return;
     }
@@ -75,9 +98,32 @@ export function useDictation(lang: string): Dictation {
         return;
       }
       setStream(s);
+      if (typeof MediaRecorder !== "undefined") {
+        const preferred = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+        ].find((type) => MediaRecorder.isTypeSupported(type));
+        const recorder = new MediaRecorder(s, preferred ? { mimeType: preferred } : undefined);
+        audioChunksRef.current = [];
+        recorder.ondataavailable = (event) => {
+          if (event.data.size) audioChunksRef.current.push(event.data);
+        };
+        recorder.start(250);
+        recorderRef.current = recorder;
+      }
     } catch {
-      // Ohne Stream keine Waveform – die Erkennung fragt selbst nach dem Mikro
+      if (!Ctor) {
+        activeRef.current = false;
+        setListening(false);
+        setStartedAt(null);
+        setError("Kein Mikrofonzugriff. Bitte erlaube das Mikrofon in den Browser-Einstellungen.");
+        return;
+      }
+      // Ohne eigenen Stream keine Waveform. Die Browser-Erkennung fragt selbst nach dem Mikrofon.
     }
+
+    if (!Ctor) return;
 
     const rec = new Ctor();
     rec.lang = langRef.current;
@@ -105,7 +151,7 @@ export function useDictation(lang: string): Dictation {
         setError(
           "Kein Mikrofonzugriff. Bitte erlaube das Mikrofon in den Browser-Einstellungen."
         );
-        stop();
+        void stop();
       }
       // "no-speech" u. ä. ignorieren – onend startet neu
     };
@@ -126,9 +172,9 @@ export function useDictation(lang: string): Dictation {
       rec.start();
     } catch {
       setError("Die Spracherkennung konnte nicht gestartet werden.");
-      stop();
+      void stop();
     }
-  }, [stop]);
+  }, [allowAudioOnly, stop]);
 
   return {
     supported,

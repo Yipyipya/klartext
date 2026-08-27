@@ -11,11 +11,12 @@ const {
   safeStorage,
   shell,
   nativeImage,
+  Notification,
 } = require("electron");
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const { Anthropic } = require("@anthropic-ai/sdk");
+const { configureLogin } = require("./startup");
 
 const WEB_URL = "https://klartext-adapt-learn.vercel.app";
 const IS_MAC = process.platform === "darwin";
@@ -32,6 +33,11 @@ const PILL_H = 210; // Platz für die Live-Mitschrift über der Pill
 let pill = null;
 let tray = null;
 let recording = false;
+let processing = false;
+let starting = false;
+let pillReady = false;
+let preparation = "Wird vorbereitet …";
+let loginState = { supported: false, enabled: false, detail: "Autostart wird geprüft …" };
 let isQuitting = false;
 
 // Nur eine Instanz zulassen. Ohne das startet jeder Aufruf eine neue Kopie
@@ -47,8 +53,11 @@ const settingsPath = () => path.join(app.getPath("userData"), "settings.json");
 
 const SETTINGS_DEFAULTS = {
   lang: "de", // "de" | "en" | "" (= automatisch)
+  mode: "quality", // "quality" (gpt-transcribe) | "local" (Whisper)
   model: "genau", // "genau" (whisper-small) | "schnell" (whisper-base)
-  apiKeyEnc: null, // Claude-API-Key, verschlüsselt über den macOS-Schlüsselbund
+  launchAtLogin: true,
+  openaiKeyEnc: null, // verschlüsselt über Schlüsselbund / Credential Vault
+  context: "Software, KI, Automatisierung, Produktarbeit und persönliche Nachrichten",
 };
 
 function loadSettings() {
@@ -112,12 +121,37 @@ function positionPill() {
 }
 
 /* ---------- Aufnahme-Steuerung ---------- */
-function startRecording() {
-  if (recording || !pill) return;
+async function startRecording() {
+  if (recording || starting || processing || !pill || !pillReady) return;
+  if (settings.mode === "quality" && !getOpenAIKey()) {
+    openKeyWindow();
+    return;
+  }
+  starting = true;
+  updateTray();
+  try {
+    // Erst auf ausdrücklichen Aufnahme-Start Berechtigungen anfragen, nie beim Login.
+    if (IS_MAC) {
+      const allowed = await systemPreferences.askForMediaAccess("microphone");
+      if (!allowed) return;
+      systemPreferences.isTrustedAccessibilityClient(true);
+    }
+  } catch (error) {
+    console.error("Mikrofonberechtigung konnte nicht geprüft werden:", error?.message);
+    return;
+  } finally {
+    starting = false;
+    updateTray();
+  }
   recording = true;
   positionPill();
   pill.showInactive(); // anzeigen ohne Fokus zu übernehmen
-  pill.webContents.send("start", settings);
+  pill.webContents.send("start", {
+    lang: settings.lang,
+    mode: settings.mode,
+    model: settings.model,
+    hasOpenAIKey: Boolean(getOpenAIKey()),
+  });
   globalShortcut.register("Escape", cancelRecording);
   updateTray();
 }
@@ -125,13 +159,14 @@ function startRecording() {
 function stopRecording() {
   if (!recording || !pill) return;
   recording = false;
+  processing = true;
   pill.webContents.send("stop"); // Renderer transkribiert und meldet "result"
   globalShortcut.unregister("Escape");
   updateTray();
 }
 
 function cancelRecording() {
-  if (!pill) return;
+  if (!pill || processing) return;
   recording = false;
   pill.webContents.send("cancel");
   pill.hide();
@@ -144,54 +179,135 @@ function toggleRecording() {
   else startRecording();
 }
 
-/* ---------- Claude-Feinschliff (optional, eigener API-Key) ---------- */
-const POLISH_MODEL = "claude-opus-4-8";
-const POLISH_SYSTEM = `Du korrigierst Diktat-Transkripte aus einer Spracherkennung.
-- Korrigiere falsch erkannte Wörter anhand des Kontexts (z. B. "umslappt" → "ob's klappt").
-- Entferne Füllwörter, Versprecher und unbeabsichtigte Wiederholungen.
-- Setze sinnvolle Interpunktion, Groß-/Kleinschreibung und Absätze.
-- Ändere weder Inhalt noch Ton noch Sprache. Fasse nichts zusammen, lasse nichts weg.
-- Antworte AUSSCHLIESSLICH mit dem korrigierten Text, ohne Kommentar oder Einleitung.`;
-
-function getApiKey() {
-  if (!settings?.apiKeyEnc) return null;
+/* ---------- Hochwertige Transkription (eigener OpenAI API-Key) ---------- */
+function getOpenAIKey() {
+  if (!settings?.openaiKeyEnc) return null;
   try {
-    return safeStorage.decryptString(Buffer.from(settings.apiKeyEnc, "base64"));
+    return safeStorage.decryptString(Buffer.from(settings.openaiKeyEnc, "base64"));
   } catch {
     return null;
   }
 }
 
-async function polishText(text) {
-  const key = getApiKey();
-  if (!key) return text;
-  try {
-    pill?.webContents.send("polish-start");
-    const client = new Anthropic({ apiKey: key });
-    const response = await client.messages.create({
-      model: POLISH_MODEL,
-      max_tokens: 16000,
-      system: POLISH_SYSTEM,
-      messages: [{ role: "user", content: text }],
-    });
-    const block = response.content.find((b) => b.type === "text");
-    return (block && block.text.trim()) || text;
-  } catch (err) {
-    console.error("Feinschliff fehlgeschlagen – lokale Version wird genutzt:", err?.message);
-    return text;
+async function transcribeWithOpenAI(audio) {
+  const key = getOpenAIKey();
+  if (!key || !audio?.byteLength) throw new Error("OpenAI-Key oder Audio fehlt");
+  if (audio.byteLength > 24_000_000) throw new Error("Die Aufnahme ist zu groß. Bitte lange Aufnahmen über den Datei-Upload transkribieren.");
+
+  const form = new FormData();
+  form.append("model", "gpt-transcribe");
+  form.append("file", new Blob([audio], { type: "audio/wav" }), "dictation.wav");
+  form.append(
+    "prompt",
+    `Personal dictation in ${settings.lang === "en" ? "English" : "German"}, sometimes containing English product names and technical terms. Preserve the spoken language and intended wording. The user's context is: ${settings.context}.`
+  );
+  for (const keyword of ["OpenAI", "ChatGPT", "Claude", "Make", "n8n", "HubSpot", "Supabase", "Next.js", "Wispr Flow", "Klartext", "Sigill"]) {
+    form.append("keywords[]", keyword);
   }
+  form.append("languages[]", settings.lang || "de");
+  if ((settings.lang || "de") === "de") form.append("languages[]", "en");
+
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}` },
+    body: form,
+    signal: AbortSignal.timeout(300_000),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`OpenAI ${response.status}: ${detail}`);
+  }
+  const result = await response.json();
+  if (!result?.text?.trim()) throw new Error("Leere Transkription");
+  return result.text.trim();
+}
+
+const REFINEMENT_INSTRUCTIONS = `Du überarbeitest ein automatisch erzeugtes Diktat sehr vorsichtig.
+Erhalte Inhalt, Sprache, Ton, Wortwahl, Namen und Fachbegriffe vollständig.
+Korrigiere ausschließlich Interpunktion, Groß- und Kleinschreibung, offensichtliche Grammatikfehler, Füllwörter, unbeabsichtigte Wortwiederholungen und klare Selbstkorrekturen.
+Formuliere keine Aussagen um, fasse nichts zusammen und ergänze keine Informationen.
+Gib ausschließlich den fertigen Text zurück.`;
+
+async function refineWithOpenAI(text) {
+  const key = getOpenAIKey();
+  if (!key || !text.trim()) return text.trim();
+  // Im Fehlerfall bleibt die volle Transkription erhalten, niemals ein gekürztes Ergebnis.
+  if (text.length > 24_000) throw new Error("Text-Feinschliff übersprungen: zu langer Text");
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-5.4-mini",
+      instructions: REFINEMENT_INSTRUCTIONS,
+      input: text.trim(),
+      reasoning: { effort: "none" },
+      text: { verbosity: "low" },
+      max_output_tokens: Math.min(16000, Math.max(512, Math.ceil(text.length / 2))),
+      store: false,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!response.ok) throw new Error(`OpenAI refinement ${response.status}`);
+  const payload = await response.json();
+  if (payload.status !== "completed") throw new Error("Unvollständiger Text-Feinschliff");
+  const output = payload.output_text?.trim() || (payload.output || [])
+    .flatMap((item) => item.content || [])
+    .filter((item) => item.type === "output_text" && item.text)
+    .map((item) => item.text.trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  if (!output) throw new Error("Leerer Text-Feinschliff");
+  return output;
+}
+
+function canonicalizeTerms(text) {
+  return text.replace(/\bSigil\b/gi, "Sigill");
 }
 
 /* ---------- Ergebnis: kopieren + an Cursor-Position einfügen ---------- */
-ipcMain.on("result", async (_e, text) => {
-  if (!text || !text.trim()) {
+ipcMain.on("result", async (_e, value) => {
+  if (_e.sender !== pill?.webContents || !processing) return;
+  const payload = typeof value === "string" ? { text: value, audio: null } : value || {};
+  let finalText = canonicalizeTerms((payload.text || "").trim());
+
+  if (settings.mode === "quality" && payload.audio?.byteLength && getOpenAIKey()) {
+    try {
+      pill?.webContents.send("processing-start");
+      finalText = canonicalizeTerms(await transcribeWithOpenAI(payload.audio));
+      try {
+        pill?.webContents.send("refining-start");
+        finalText = canonicalizeTerms(await refineWithOpenAI(finalText));
+      } catch (refinementError) {
+        console.error("Text-Feinschliff fehlgeschlagen, Transkription wird beibehalten:", refinementError?.message);
+      }
+    } catch (err) {
+      console.error("Cloud-Transkription fehlgeschlagen:", err?.message);
+      if (Notification.isSupported()) {
+        new Notification({
+          title: "Klartext konnte nicht transkribieren",
+          body: payload.audio.byteLength > 24_000_000
+            ? "Die Aufnahme war zu lang. Für lange Aufnahmen nutze bitte den Datei-Upload."
+            : "Bitte prüfe deinen OpenAI API-Key und deine Internetverbindung.",
+        }).show();
+      }
+    }
+  }
+
+  if (!finalText) {
+    processing = false;
+    updateTray();
     pill?.hide();
     return;
   }
-  const finalText = await polishText(text.trim());
   pill?.hide();
   clipboard.writeText(finalText);
   const onErr = (err) => {
+    processing = false;
+    updateTray();
     if (err) {
       console.error(
         "Einfügen fehlgeschlagen, der Text liegt in der Zwischenablage:",
@@ -219,6 +335,9 @@ ipcMain.on("result", async (_e, text) => {
       ],
       onErr
     );
+  } else {
+    processing = false;
+    updateTray();
   }
 });
 
@@ -236,7 +355,7 @@ function openKeyWindow() {
     resizable: false,
     minimizable: false,
     maximizable: false,
-    title: "Klartext – Claude-Feinschliff",
+    title: "Klartext – Beste Qualität",
     webPreferences: { preload: path.join(__dirname, "preload.js") },
   });
   keyWin.loadFile("keywin.html");
@@ -246,9 +365,9 @@ function openKeyWindow() {
 ipcMain.on("save-api-key", (_e, key) => {
   const trimmed = (key || "").trim();
   if (trimmed && safeStorage.isEncryptionAvailable()) {
-    settings.apiKeyEnc = safeStorage.encryptString(trimmed).toString("base64");
+    settings.openaiKeyEnc = safeStorage.encryptString(trimmed).toString("base64");
   } else {
-    settings.apiKeyEnc = null;
+    settings.openaiKeyEnc = null;
   }
   saveSettings(settings);
   keyWin?.close();
@@ -261,6 +380,34 @@ ipcMain.on("pill-error", (_e, message) => {
   console.error("Pill-Fehler:", message);
   pill?.hide();
   recording = false;
+  processing = false;
+  globalShortcut.unregister("Escape");
+  updateTray();
+});
+
+function prepareSelectedMode() {
+  if (!pillReady || recording || processing) return;
+  preparation = settings.mode === "local" ? "Lokales Modell wird vorbereitet …" : "Qualitätsmodus bereit";
+  pill.webContents.send("prepare", { mode: settings.mode, model: settings.model });
+  updateTray();
+}
+
+ipcMain.on("renderer-ready", (event) => {
+  if (event.sender !== pill?.webContents) return;
+  pillReady = true;
+  if (SMOKE_TEST) {
+    console.log("SMOKE_OK: renderer ready, no microphone or login registration");
+    quitApp();
+    return;
+  }
+  prepareSelectedMode();
+});
+
+ipcMain.on("prepared", (event, result) => {
+  if (event.sender !== pill?.webContents || result.mode !== settings.mode || result.model !== settings.model) return;
+  preparation = result.ok
+    ? settings.mode === "local" ? "Lokales Modell bereit" : "Qualitätsmodus bereit"
+    : "Lokales Modell: Vorbereitung fehlgeschlagen, erneuter Versuch beim Diktat";
   updateTray();
 });
 
@@ -293,6 +440,22 @@ function updateTray() {
     click: () => {
       settings.model = value;
       saveSettings(settings);
+      prepareSelectedMode();
+      updateTray();
+    },
+  }));
+
+  const modeItems = [
+    ["Beste Qualität (OpenAI)", "quality"],
+    ["Lokal und offline", "local"],
+  ].map(([label, value]) => ({
+    label,
+    type: "radio",
+    checked: settings.mode === value,
+    click: () => {
+      settings.mode = value;
+      saveSettings(settings);
+      prepareSelectedMode();
       updateTray();
     },
   }));
@@ -300,33 +463,52 @@ function updateTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
-        label: recording ? "Aufnahme beenden" : "Diktieren",
+        label: processing ? "Text wird verarbeitet …" : recording ? "Aufnahme beenden" : "Diktieren",
+        enabled: pillReady && !processing && !starting,
         accelerator: HOTKEY,
         click: toggleRecording,
       },
       { type: "separator" },
-      { label: "Sprache", submenu: langItems },
-      { label: "Genauigkeit", submenu: modelItems },
+      { label: preparation, enabled: false },
+      { label: "Sprache", submenu: langItems, enabled: !recording && !processing },
+      { label: "Transkription", submenu: modeItems, enabled: !recording && !processing },
+      ...(settings.mode === "local" ? [{ label: "Lokales Modell", submenu: modelItems, enabled: !recording && !processing }] : []),
       { type: "separator" },
       {
-        label: getApiKey()
-          ? "Claude-Feinschliff: aktiv ✓"
-          : "Claude-Feinschliff: aus",
+        label: getOpenAIKey()
+          ? "Beste Qualität: bereit ✓"
+          : "Beste Qualität: API-Key fehlt",
         enabled: false,
       },
-      { label: "API-Key eintragen …", click: openKeyWindow },
-      ...(settings.apiKeyEnc
+      { label: "OpenAI API-Key eintragen …", enabled: !recording && !processing, click: openKeyWindow },
+      ...(settings.openaiKeyEnc
         ? [
             {
               label: "API-Key entfernen",
+              enabled: !recording && !processing,
               click: () => {
-                settings.apiKeyEnc = null;
+                settings.openaiKeyEnc = null;
                 saveSettings(settings);
                 updateTray();
               },
             },
           ]
         : []),
+      { type: "separator" },
+      {
+        label: "Bei der Anmeldung starten",
+        type: "checkbox",
+        checked: loginState.enabled,
+        enabled: loginState.supported,
+        click: (item) => {
+          settings.launchAtLogin = item.checked;
+          loginState = configureLogin(app, settings, process.platform, process.execPath, true);
+          saveSettings(settings);
+          updateTray();
+        },
+      },
+      { label: loginState.detail, enabled: false },
+      ...(IS_MAC ? [{ label: "Anmeldeobjekte in macOS öffnen", click: () => shell.openExternal("x-apple.systempreferences:com.apple.LoginItems-Settings.extension") }] : []),
       { type: "separator" },
       { label: "Klartext Web-App öffnen", click: () => shell.openExternal(WEB_URL) },
       ...(IS_MAC
@@ -400,6 +582,10 @@ app.whenReady().then(async () => {
     return;
   }
   settings = loadSettings();
+  if (!SMOKE_TEST) {
+    loginState = configureLogin(app, settings, process.platform, process.execPath);
+    saveSettings(settings);
+  }
   if (process.platform === "darwin") app.dock?.hide();
 
   createPill();
@@ -409,15 +595,8 @@ app.whenReady().then(async () => {
   if (!ok) console.error(`Globaler Shortcut ${HOTKEY} konnte nicht registriert werden.`);
 
   if (SMOKE_TEST) {
-    console.log("SMOKE_OK");
-    app.quit();
+    setTimeout(() => { console.error("SMOKE_TIMEOUT"); quitApp(); }, 15_000).unref();
     return;
-  }
-
-  if (process.platform === "darwin") {
-    // Mikrofon-Berechtigung früh anfragen, Bedienungshilfen-Status prüfen (öffnet ggf. Dialog)
-    systemPreferences.askForMediaAccess("microphone").catch(() => {});
-    systemPreferences.isTrustedAccessibilityClient(true);
   }
 });
 

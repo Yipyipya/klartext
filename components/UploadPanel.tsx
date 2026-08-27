@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cleanTranscript } from "@/lib/cleanup";
-import { polishTranscript } from "@/lib/polish";
+import { decodeAudio, transcribeUpload } from "@/lib/audio-upload";
+import { refineTranscriptWithOpenAI } from "@/lib/refine-transcript";
 import { countWords, LANGUAGES, WHISPER_MODELS, type Settings } from "@/lib/store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -37,42 +38,10 @@ const STATUS_LABEL: Record<Status, string> = {
   liest: "Audio wird gelesen …",
   modell: "Whisper-Modell wird geladen …",
   transkribiert: "Transkribiert …",
-  feinschliff: "Klartext-Feinschliff …",
+  feinschliff: "Text wird geglättet …",
   fertig: "Fertig",
   fehler: "Fehler",
 };
-
-/** Der Browser konnte die Datei nicht dekodieren (z. B. Apple Lossless in Chrome). */
-class DecodeError extends Error {}
-
-async function decodeAudio(file: File): Promise<{ pcm: Float32Array; duration: number }> {
-  const buf = await file.arrayBuffer();
-  const AC = window.AudioContext || (window as any).webkitAudioContext;
-  // Whisper erwartet 16 kHz mono – der AudioContext resampled beim Dekodieren
-  const ctx = new AC({ sampleRate: 16000 });
-  try {
-    let audio: AudioBuffer;
-    try {
-      audio = await ctx.decodeAudioData(buf);
-    } catch (err) {
-      throw new DecodeError(String((err as Error)?.message ?? err));
-    }
-    const { numberOfChannels, length, duration } = audio;
-    let pcm: Float32Array;
-    if (numberOfChannels === 1) {
-      pcm = audio.getChannelData(0);
-    } else {
-      pcm = new Float32Array(length);
-      for (let c = 0; c < numberOfChannels; c++) {
-        const d = audio.getChannelData(c);
-        for (let i = 0; i < length; i++) pcm[i] += d[i] / numberOfChannels;
-      }
-    }
-    return { pcm, duration };
-  } finally {
-    ctx.close();
-  }
-}
 
 export default function UploadPanel({
   settings,
@@ -98,6 +67,8 @@ export default function UploadPanel({
   const langRef = useRef(lang);
   langRef.current = lang;
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
   // Einstellungen kommen erst nach der Hydration aus dem localStorage
   useEffect(() => {
@@ -108,7 +79,10 @@ export default function UploadPanel({
     setItems((list) => list.map((it) => (it.id === id ? { ...it, ...p } : it)));
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
       workerRef.current?.terminate();
       workerRef.current = null;
     };
@@ -141,18 +115,31 @@ export default function UploadPanel({
   ): Promise<string> {
     const worker = getWorker();
     return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timeout);
+        worker.removeEventListener("message", onMsg);
+        worker.removeEventListener("error", onError);
+      };
+      const onError = () => {
+        cleanup();
+        worker.terminate();
+        workerRef.current = null;
+        reject(new Error("Lokales Whisper wurde beendet. Bitte versuche die Datei erneut."));
+      };
+      const timeout = setTimeout(onError, 20 * 60 * 1000);
       const onMsg = (ev: MessageEvent) => {
         const msg = ev.data;
         if (msg.id !== id) return;
         if (msg.type === "result") {
-          worker.removeEventListener("message", onMsg);
+          cleanup();
           resolve(msg.text as string);
         } else if (msg.type === "error") {
-          worker.removeEventListener("message", onMsg);
+          cleanup();
           reject(new Error(msg.message));
         }
       };
       worker.addEventListener("message", onMsg);
+      worker.addEventListener("error", onError);
       worker.postMessage(
         {
           id,
@@ -166,31 +153,54 @@ export default function UploadPanel({
   }
 
   async function processNext() {
-    if (busyRef.current) return;
+    if (busyRef.current || !mountedRef.current) return;
     const next = queueRef.current.shift();
     if (!next) return;
     busyRef.current = true;
     currentRef.current = next.id;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let partialText = "";
     try {
       patch(next.id, { status: "liest" });
-      const { pcm, duration } = await decodeAudio(next.file);
-      patch(next.id, { status: "transkribiert" });
-      const rawText = await transcribeInWorker(
-        next.id,
-        pcm,
-        langRef.current.split("-")[0]
-      );
-      let cleaned = cleanTranscript(rawText, settingsRef.current);
       const s = settingsRef.current;
-      if (cleaned && s.polish && s.apiKey.trim()) {
+      const useCloud = s.transcriptionMode === "quality";
+      let rawText: string;
+      let duration: number;
+      if (useCloud) {
+        const result = await transcribeUpload(next.file, {
+              apiKey: s.openaiApiKey,
+              language: langRef.current,
+              dictionary: s.dictionary,
+              context: s.context,
+              signal: controller.signal,
+            }, (detail, partial) => {
+              partialText = partial;
+              patch(next.id, { status: "transkribiert", detail });
+            });
+        rawText = result.raw;
+        duration = result.duration;
+      } else {
+        const audio = await decodeAudio(next.file, true);
+        const pcm = new Float32Array(audio.channels[0].length);
+        for (const channel of audio.channels) for (let i = 0; i < pcm.length; i++) pcm[i] += channel[i] / audio.channels.length;
+        duration = audio.duration;
+        rawText = await transcribeInWorker(next.id, pcm, langRef.current.split("-")[0]);
+      }
+      let finalText = rawText;
+      let warning: string | undefined;
+      if (useCloud && s.cleanup !== "aus") {
         patch(next.id, { status: "feinschliff", detail: undefined });
         try {
-          cleaned = await polishTranscript(cleaned, s.apiKey.trim());
-        } catch {
-          // Feinschliff fehlgeschlagen – lokale Version behalten
+          finalText = await refineTranscriptWithOpenAI(rawText, s.openaiApiKey, controller.signal);
+        } catch (error) {
+          warning = "Der KI-Feinschliff war nicht verfügbar. Die vollständige Transkription wurde behalten.";
+          console.error("Text-Feinschliff fehlgeschlagen, Transkription wird beibehalten:", error);
         }
       }
-      patch(next.id, { status: "fertig", text: cleaned, detail: undefined });
+      if (!mountedRef.current) return;
+      const cleaned = cleanTranscript(finalText, s);
+      patch(next.id, { status: "fertig", text: cleaned, detail: undefined, error: warning });
       if (cleaned) {
         onDone({
           text: cleaned,
@@ -199,17 +209,18 @@ export default function UploadPanel({
           durationSec: Math.round(duration),
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if (!mountedRef.current) return;
       patch(next.id, {
         status: "fehler",
-        error:
-          err instanceof DecodeError
-            ? "Dieses Audio kann der Browser nicht öffnen. Häufigste Ursache bei M4A: Apple Lossless (ALAC), das Chrome und Firefox nicht dekodieren können, etwa aus Sprachmemos mit der Qualitätsstufe „Lossless“. In Safari öffnen oder die Datei vorher als MP3 oder WAV exportieren."
-            : "Diese Datei konnte nicht verarbeitet werden. Unterstützt sind gängige Audio-Formate (MP3, M4A, WAV, OGG, WebM).",
+        detail: undefined,
+        text: partialText || undefined,
+        error: `${partialText ? "Unvollständig: Nur die bereits abgeschlossenen Abschnitte stehen unten. " : ""}${err instanceof Error ? err.message : "Diese Datei konnte nicht verarbeitet werden."}`,
       });
       console.error(err);
     } finally {
       busyRef.current = false;
+      abortRef.current = null;
       currentRef.current = null;
       processNext();
     }
@@ -295,16 +306,15 @@ export default function UploadPanel({
           </select>
         </label>
         <p className="mx-auto mt-2 max-w-md text-[11px] leading-relaxed text-mut">
-          Whisper braucht die Sprache vorgegeben. Steht hier die falsche, wird
-          der Text übersetzt statt transkribiert.
+          Wähle die hauptsächlich gesprochene Sprache. Große Dateien werden im
+          Qualitätsmodus automatisch aufgeteilt (bis 100 MB und 30 Minuten).
         </p>
       </div>
 
       <p className="text-center text-xs text-mut">
-        Alles läuft komplett lokal in deinem Browser. Die Aufnahme wird
-        nirgendwohin hochgeladen. Beim ersten Mal lädt Klartext einmalig ein
-        Whisper-Modell von etwa 80 bis 250&nbsp;MB, je nach gewählter
-        Genauigkeit. Danach ist es gecacht.
+        {settings.transcriptionMode === "quality"
+          ? "Im Qualitätsmodus wird die Aufnahme zur Transkription an OpenAI gesendet. Dein Verlauf bleibt lokal in diesem Browser."
+          : "Im Lokalmodus bleibt die Aufnahme auf deinem Gerät. Beim ersten Mal lädt Klartext einmalig ein Whisper-Modell von etwa 80 bis 250 MB."}
       </p>
 
       {/* Ergebnisliste */}
@@ -333,7 +343,7 @@ export default function UploadPanel({
                   width:
                     it.status === "modell" && it.detail
                       ? it.detail.replace(" %", "%")
-                      : it.status === "transkribiert" || it.status === "feinschliff"
+                      : it.status === "transkribiert"
                         ? "90%"
                         : "15%",
                 }}

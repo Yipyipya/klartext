@@ -6,6 +6,13 @@ const FILLER_DE =
 const FILLER_EN =
   /(^|[\s,("'-])(?:um+|uh+|uhm+|erm+|hmm+|mhm+)(?=[\s.,!?:;…)"'-]|$)/gi;
 
+// Persönliche kanonische Schreibweisen, die das Modell trotz Kontext gelegentlich
+// auf ein geläufigeres Wort normalisiert. Das Nutzerwörterbuch wird danach
+// angewendet und kann diese Vorgaben bei Bedarf überschreiben.
+const BUILT_IN_DICTIONARY: DictEntry[] = [
+  { from: "Sigil", to: "Sigill" },
+];
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -14,7 +21,7 @@ export function applyDictionary(text: string, dict: DictEntry[]): string {
   let t = text;
   for (const { from, to } of dict) {
     if (!from.trim()) continue;
-    t = t.replace(new RegExp(escapeRegExp(from.trim()), "gi"), to);
+    t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(from.trim())}(?![\\p{L}\\p{N}_])`, "giu"), () => to);
   }
   return t;
 }
@@ -34,7 +41,8 @@ export function cleanTranscript(text: string, settings: Settings): string {
 
   t = t
     .replace(/\s+([,.!?;:…])/g, "$1")
-    .replace(/\s{2,}/g, " ")
+    .replace(/[^\S\n]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 
   if (settings.cleanup !== "aus" && t) {
@@ -44,5 +52,5 @@ export function cleanTranscript(text: string, settings: Settings): string {
     t += ".";
   }
 
-  return applyDictionary(t, settings.dictionary);
+  return applyDictionary(applyDictionary(t, BUILT_IN_DICTIONARY), settings.dictionary);
 }

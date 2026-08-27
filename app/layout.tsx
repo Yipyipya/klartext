@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { EB_Garamond, Figtree } from "next/font/google";
+import { Figtree } from "next/font/google";
 import "./globals.css";
 
 const figtree = Figtree({
@@ -7,17 +7,12 @@ const figtree = Figtree({
   subsets: ["latin"],
 });
 
-const garamond = EB_Garamond({
-  variable: "--font-garamond",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-});
-
 export const metadata: Metadata = {
-  title: "Klartext. Sprich. Der Rest ist Text.",
+  title: "Klartext · Voice Workspace",
   description:
-    "Diktiere live in deiner Sprache oder lade Sprachaufnahmen hoch und erhalte sauberen, kopierfertigen Text. Kostenlos, privat, direkt im Browser.",
+    "Ein fokussiertes Diktierwerkzeug für präzise, direkt nutzbare Texte im Browser und auf dem Desktop.",
   applicationName: "Klartext",
+  robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false, noimageindex: true } },
   appleWebApp: {
     capable: true,
     title: "Klartext",
@@ -27,8 +22,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f6f1e7" },
-    { media: "(prefers-color-scheme: dark)", color: "#17140f" },
+    { media: "(prefers-color-scheme: light)", color: "#f2f5f3" },
+    { media: "(prefers-color-scheme: dark)", color: "#090c0b" },
   ],
 };
 
@@ -43,7 +38,7 @@ export default function RootLayout({
     <html
       lang="de"
       suppressHydrationWarning
-      className={`${figtree.variable} ${garamond.variable} h-full antialiased`}
+      className={`${figtree.variable} h-full antialiased`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />

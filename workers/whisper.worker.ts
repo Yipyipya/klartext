@@ -75,6 +75,7 @@ self.onmessage = async (ev: MessageEvent) => {
       : out.text;
     post({ id, type: "result", text: (text ?? "").trim() });
   } catch (err: any) {
+    loading = null;
     post({ id, type: "error", message: String(err?.message ?? err) });
   }
 };

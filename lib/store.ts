@@ -6,6 +6,7 @@ export interface DictEntry {
 }
 
 export type WhisperQuality = "genau" | "schnell";
+export type TranscriptionMode = "quality" | "local";
 
 export const WHISPER_MODELS: Record<WhisperQuality, string> = {
   genau: "onnx-community/whisper-small",
@@ -17,9 +18,10 @@ export interface Settings {
   cleanup: CleanupLevel;
   autoCopy: boolean;
   dictionary: DictEntry[];
+  transcriptionMode: TranscriptionMode;
+  openaiApiKey: string;
+  context: string;
   whisperModel: WhisperQuality;
-  polish: boolean; // KI-Feinschliff über die Claude-API
-  apiKey: string; // eigener Claude-API-Key des Nutzers, bleibt im localStorage dieses Geräts
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -27,9 +29,10 @@ export const DEFAULT_SETTINGS: Settings = {
   cleanup: "sanft",
   autoCopy: true,
   dictionary: [],
+  transcriptionMode: "quality",
+  openaiApiKey: "",
+  context: "Software, KI, Automatisierung, Produktarbeit und persönliche Nachrichten",
   whisperModel: "genau",
-  polish: false,
-  apiKey: "",
 };
 
 export const LANGUAGES: { code: string; label: string }[] = [

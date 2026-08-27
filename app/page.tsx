@@ -7,7 +7,8 @@ import HistoryPanel from "@/components/HistoryPanel";
 import DownloadPanel from "@/components/DownloadPanel";
 import { useDictation } from "@/hooks/useDictation";
 import { cleanTranscript } from "@/lib/cleanup";
-import { polishTranscript } from "@/lib/polish";
+import { transcribeWithOpenAI } from "@/lib/cloud-transcribe";
+import { refineTranscriptWithOpenAI } from "@/lib/refine-transcript";
 import {
   DEFAULT_SETTINGS,
   LANGUAGES,
@@ -35,8 +36,10 @@ export default function Home() {
   const [seconds, setSeconds] = useState(0);
   const [lastRaw, setLastRaw] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const processingRef = useRef(false);
 
-  const d = useDictation(settings.lang);
+  const d = useDictation(settings.lang, settings.transcriptionMode === "quality");
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finalRef = useRef("");
@@ -44,6 +47,7 @@ export default function Home() {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const sessionStartWords = useRef(0);
+  const sessionPrefix = useRef("");
   const sessionStartAt = useRef(0);
   const spaceHold = useRef(false);
   const listeningRef = useRef(false);
@@ -96,7 +100,7 @@ export default function Home() {
 
   /* ---------- Diktat: Start / Stopp ---------- */
   const startDictation = useCallback(() => {
-    if (listeningRef.current) return;
+    if (listeningRef.current || processingRef.current) return;
     if (!d.supported) {
       showToast("Live-Diktat wird von diesem Browser nicht unterstützt");
       return;
@@ -104,38 +108,64 @@ export default function Home() {
     setShowRaw(false);
     setTab("diktat");
     sessionStartWords.current = countWords(finalRef.current);
+    sessionPrefix.current = finalRef.current.trim();
     sessionStartAt.current = Date.now();
-    d.start();
+    void d.start();
   }, [d, showToast]);
 
-  const finishDictation = useCallback(() => {
-    if (!listeningRef.current) return;
+  const finishDictation = useCallback(async () => {
+    if (!listeningRef.current || processingRef.current) return;
+    processingRef.current = true;
+    setProcessing(true);
     const duration = (Date.now() - sessionStartAt.current) / 1000;
-    d.stop();
-    // Kurz warten, bis späte finale Ergebnisse der Erkennung eingetroffen sind
-    setTimeout(async () => {
+    try {
+      const audio = await d.stop();
+      // Kurz warten, bis späte finale Ergebnisse der Erkennung eingetroffen sind
+      await new Promise((resolve) => setTimeout(resolve, 350));
       const raw = finalRef.current;
       const s = settingsRef.current;
-      const cleaned = cleanTranscript(raw, s);
+      let dictatedRaw = raw.slice(sessionPrefix.current.length).trim();
+      let usedCloudTranscription = false;
+
+      if (s.transcriptionMode === "quality" && audio && s.openaiApiKey.trim()) {
+        showToast("Transkription wird präzisiert …");
+        try {
+          dictatedRaw = await transcribeWithOpenAI(audio, {
+            apiKey: s.openaiApiKey,
+            language: s.lang,
+            dictionary: s.dictionary,
+            context: s.context,
+          });
+          usedCloudTranscription = true;
+        } catch (error) {
+          console.error(error);
+          showToast("Cloud-Transkription fehlgeschlagen. Browser-Text wurde behalten.");
+        }
+      } else if (s.transcriptionMode === "quality" && !s.openaiApiKey.trim()) {
+        setShowSettings(true);
+        showToast("Für beste Qualität fehlt noch dein OpenAI API-Key.");
+      }
+
+      const originalRaw = [sessionPrefix.current, dictatedRaw].filter(Boolean).join(" ");
+      if (usedCloudTranscription && s.cleanup !== "aus") {
+        try {
+          dictatedRaw = await refineTranscriptWithOpenAI(dictatedRaw, s.openaiApiKey);
+        } catch (error) {
+          console.error("Text-Feinschliff fehlgeschlagen, Transkription wird beibehalten:", error);
+        }
+      }
+
+      const combinedRaw = [sessionPrefix.current, dictatedRaw].filter(Boolean).join(" ");
+      const cleaned = cleanTranscript(combinedRaw, s);
       const sessionWords = Math.max(
         0,
         countWords(cleaned) - sessionStartWords.current
       );
       if (!cleaned || sessionWords === 0) return;
       d.setFinalText(cleaned);
-      setLastRaw(raw);
+      setLastRaw(originalRaw);
 
-      // Optionaler kontextbasierter Feinschliff über die Claude-API
-      let final = cleaned;
-      if (s.polish && s.apiKey.trim()) {
-        showToast("Klartext-Feinschliff läuft …");
-        try {
-          final = await polishTranscript(cleaned, s.apiKey.trim());
-          d.setFinalText(final);
-        } catch {
-          showToast("Feinschliff fehlgeschlagen. Es wird die lokale Version genutzt.");
-        }
-      }
+      const final = cleaned;
 
       setHistory(
         addHistory({
@@ -143,13 +173,16 @@ export default function Home() {
           ts: Date.now(),
           source: "diktat",
           text: final,
-          raw,
+          raw: originalRaw,
           words: Math.max(1, countWords(final) - sessionStartWords.current),
           durationSec: Math.round(duration),
         })
       );
       if (s.autoCopy) copy(final);
-    }, 350);
+    } finally {
+      processingRef.current = false;
+      setProcessing(false);
+    }
   }, [d, copy, showToast]);
 
   const toggleDictation = useCallback(() => {
@@ -240,90 +273,132 @@ export default function Home() {
     LANGUAGES.find((l) => l.code === settings.lang)?.label ?? settings.lang;
 
   return (
-    <div className="flex min-h-screen flex-col">
-      {/* ---------- Header ---------- */}
-      <header className="kt-glass sticky top-0 z-20 border-b border-line">
-        <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-b from-ember to-ember-2 text-white shadow-[var(--sh-glow)]">
-              <LogoBars />
-            </span>
-            <span className="hidden font-display text-[1.65rem] leading-none tracking-tight sm:inline">
-              Klartext
-            </span>
+    <div className="app-shell min-h-dvh">
+      <aside className="desktop-sidebar kt-glass">
+        <div className="brand-lockup">
+          <span className="brand-mark"><LogoBars /></span>
+          <div>
+            <div className="brand-name">Klartext</div>
+            <div className="brand-caption">Voice workspace</div>
           </div>
+        </div>
 
-          <nav className="seg ml-auto">
-            {(
-              [
-                ["diktat", "Diktat"],
-                ["dateien", "Dateien"],
-                ["verlauf", "Verlauf"],
-                ["desktop", "Desktop"],
-              ] as [Tab, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setTab(key)}
-                data-active={tab === key}
-                className="seg-item sm:px-3.5 sm:text-sm"
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
+        <nav className="sidebar-nav" aria-label="Hauptnavigation">
+          {([
+            ["diktat", "Diktat"],
+            ["dateien", "Dateien"],
+            ["verlauf", "Verlauf"],
+            ["desktop", "Desktop-App"],
+          ] as [Tab, string][]).map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)} data-active={tab === key}>
+              <NavIcon tab={key} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
 
-          <button
-            onClick={toggleTheme}
-            aria-label="Design wechseln"
-            className="icon-btn shrink-0"
-          >
+        <div className="sidebar-spacer" />
+        <div className="quality-card">
+          <div className="quality-card-head">
+            <span className="status-orb" />
+            {settings.transcriptionMode === "quality" ? "Beste Qualität" : "Lokal"}
+          </div>
+          <p>
+            {settings.transcriptionMode === "quality"
+              ? settings.openaiApiKey
+                ? "Kontextbasierte Erkennung ist bereit."
+                : "API-Key ergänzen, um den Qualitätsmodus zu aktivieren."
+              : "Whisper läuft vollständig auf diesem Gerät."}
+          </p>
+        </div>
+        <div className="sidebar-actions">
+          <button onClick={toggleTheme} aria-label="Design wechseln" className="icon-btn">
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
-          <button
-            onClick={() => setShowSettings((v) => !v)}
-            aria-label="Einstellungen"
-            data-active={showSettings}
-            className="icon-btn shrink-0"
-          >
-            <GearIcon />
+          <button onClick={() => setShowSettings(true)} className="settings-button">
+            <GearIcon /> Einstellungen
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* ---------- Einstellungen ---------- */}
-      {showSettings && (
-        <div className="pop mx-auto w-full max-w-3xl px-4 pt-4">
-          <SettingsCard settings={settings} setSettings={setSettings} />
-        </div>
-      )}
+      <section className="app-workspace">
+        <header className="mobile-header">
+          <div className="brand-lockup compact">
+            <span className="brand-mark"><LogoBars /></span>
+            <span className="brand-name">Klartext</span>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={toggleTheme} aria-label="Design wechseln" className="icon-btn">
+              {dark ? <SunIcon /> : <MoonIcon />}
+            </button>
+            <button onClick={() => setShowSettings(true)} aria-label="Einstellungen" className="icon-btn">
+              <GearIcon />
+            </button>
+          </div>
+        </header>
 
-      {/* ---------- Inhalt ---------- */}
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-44 pt-6">
+        <nav className="mobile-nav" aria-label="Hauptnavigation">
+          {([
+            ["diktat", "Diktat"],
+            ["dateien", "Dateien"],
+            ["verlauf", "Verlauf"],
+            ["desktop", "Desktop"],
+          ] as [Tab, string][]).map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)} data-active={tab === key}>
+              <NavIcon tab={key} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+
+        {showSettings && (
+          <div className="settings-layer">
+            <button
+              className="settings-scrim"
+              aria-label="Einstellungen schließen"
+              onClick={() => setShowSettings(false)}
+            />
+            <aside className="settings-drawer" role="dialog" aria-modal="true" aria-label="Einstellungen">
+              <div className="settings-drawer-head">
+                <div>
+                  <p className="eyebrow">Persönlich einrichten</p>
+                  <h2>Einstellungen</h2>
+                </div>
+                <button onClick={() => setShowSettings(false)} className="icon-btn" aria-label="Einstellungen schließen">
+                  <CloseIcon />
+                </button>
+              </div>
+              <SettingsCard settings={settings} setSettings={setSettings} />
+            </aside>
+          </div>
+        )}
+
+        <main className="workspace-content">
         {tab === "diktat" && (
           <div className="space-y-5">
-            <div className="rise rise-1 text-center">
-              <span className="chip mx-auto mb-4 border border-line bg-surface/70 text-ink-soft shadow-[var(--sh-sm)]">
-                <span className="h-1.5 w-1.5 rounded-full bg-ember" />
-                Privat · direkt im Browser
-              </span>
-              <h1 className="font-display text-[2.6rem] leading-[1.05] tracking-tight sm:text-[3.4rem]">
-                Sprich.{" "}
-                <span className="bg-gradient-to-r from-ember to-ember-2 bg-clip-text text-transparent">
-                  Der Rest ist Text.
+            <div className="workspace-heading rise rise-1">
+              <div>
+                <p className="eyebrow">Neues Diktat</p>
+                <h1>Was möchtest du festhalten?</h1>
+                <p>Sprich frei. Klartext macht daraus einen sauberen, direkt nutzbaren Text.</p>
+              </div>
+              <button className="mode-badge" onClick={() => setShowSettings(true)}>
+                <span className="status-orb" />
+                <span>
+                  <small>Modus</small>
+                  {settings.transcriptionMode === "quality" ? "Beste Qualität" : "Lokal"}
                 </span>
-              </h1>
-              <p className="mx-auto mt-3 max-w-lg text-[15px] leading-relaxed text-mut">
-                Diktiere hier, kopiere mit einem Klick und füge den Text in
-                jeder App ein. Das ist rund 4× schneller als Tippen.
-              </p>
+                <ChevronIcon />
+              </button>
             </div>
 
             {!d.supported && (
               <div className="kt-hair rounded-3xl bg-lav/40 p-4 text-sm text-lav-ink">
-                Dein Browser unterstützt kein Live-Diktat, zum Beispiel Firefox.
-                Nutze Chrome, Edge oder Safari. Alternativ kannst du Aufnahmen
-                im Tab <b>Dateien</b> transkribieren, das funktioniert überall.
+                {settings.transcriptionMode === "local" ? (
+                  <>Dein Browser unterstützt hier kein lokales Live-Diktat. Nutze Chrome, Edge oder Safari, wechsle zu <b>Beste Qualität</b> oder transkribiere eine Aufnahme im Tab <b>Dateien</b>.</>
+                ) : (
+                  <>Dieser Browser kann keine Mikrofonaufnahme starten. Prüfe die Browser-Berechtigungen oder transkribiere eine Aufnahme im Tab <b>Dateien</b>.</>
+                )}
               </div>
             )}
             {d.error && (
@@ -334,7 +409,7 @@ export default function Home() {
 
             {/* Editor-Karte */}
             <div
-              className={`kt-card rise rise-2 p-6 transition-shadow duration-300 sm:p-7 ${
+              className={`editor-card kt-card rise rise-2 p-6 transition-shadow duration-300 sm:p-8 ${
                 d.listening ? "kt-elevated" : ""
               }`}
             >
@@ -350,7 +425,7 @@ export default function Home() {
                   value={d.finalText}
                   onChange={(e) => d.setFinalText(e.target.value)}
                   placeholder="Halte die Leertaste gedrückt oder tippe unten auf „Diktieren“ und sprich einfach los …"
-                  className="min-h-[38vh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none placeholder:text-mut/60"
+                  className="min-h-[42vh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none placeholder:text-mut/60"
                 />
               )}
 
@@ -409,32 +484,34 @@ export default function Home() {
           </div>
         )}
 
-        {tab === "dateien" && (
-          <div className="space-y-5">
-            <div className="rise rise-1 text-center">
-              <h1 className="font-display text-[2.3rem] leading-tight tracking-tight sm:text-[2.8rem]">
+          <div className="space-y-5" hidden={tab !== "dateien"}>
+            <div className="workspace-heading rise rise-1">
+              <div>
+              <p className="eyebrow">Audio importieren</p>
+              <h1>
                 Aufnahmen transkribieren
               </h1>
-              <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-mut">
-                Sprachmemos, Meetings oder Sprachnachrichten. Alles bleibt
-                privat und direkt auf deinem Gerät.
+              <p>
+                Sprachmemos, Meetings oder Sprachnachrichten in sauberen Text verwandeln.
               </p>
+              </div>
             </div>
             <div className="rise rise-2">
               <UploadPanel settings={settings} onDone={onUploadDone} onCopy={copy} />
             </div>
           </div>
-        )}
-
         {tab === "verlauf" && (
           <div className="space-y-5">
-            <div className="rise rise-1 text-center">
-              <h1 className="font-display text-[2.3rem] leading-tight tracking-tight sm:text-[2.8rem]">
+            <div className="workspace-heading rise rise-1">
+              <div>
+              <p className="eyebrow">Auf diesem Gerät</p>
+              <h1>
                 Dein Verlauf
               </h1>
-              <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-mut">
-                Alles bleibt lokal auf diesem Gerät gespeichert.
+              <p>
+                Finde, kopiere und verwalte deine letzten Diktate.
               </p>
+              </div>
             </div>
             <HistoryPanel
               entries={history}
@@ -447,14 +524,17 @@ export default function Home() {
 
         {tab === "desktop" && (
           <div className="space-y-5">
-            <div className="rise rise-1 text-center">
-              <h1 className="font-display text-[2.3rem] leading-tight tracking-tight sm:text-[2.8rem]">
+            <div className="workspace-heading rise rise-1">
+              <div>
+              <p className="eyebrow">Überall diktieren</p>
+              <h1>
                 Klartext für den Desktop
               </h1>
-              <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-mut">
+              <p>
                 Diktiere per Shortcut in jede App auf deinem Mac oder Windows-PC.
                 Der Text landet direkt an der Cursor-Position.
               </p>
+              </div>
             </div>
             <DownloadPanel />
           </div>
@@ -462,9 +542,14 @@ export default function Home() {
       </main>
 
       {/* ---------- Schwebende Diktier-Pill ---------- */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-7 z-30 flex justify-center px-4">
+      <div className="dictation-dock pointer-events-none fixed z-30 flex justify-center px-4">
         <div className="pointer-events-auto">
-          {d.listening ? (
+          {processing ? (
+            <div className="processing-pill pop" role="status" aria-live="polite">
+              <span className="spinner" />
+              <span>Transkription wird präzisiert</span>
+            </div>
+          ) : d.listening ? (
             <div className="rec-halo pop flex items-center gap-3 rounded-full bg-ink px-4 py-2.5 text-surface">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ember opacity-70" />
@@ -485,7 +570,8 @@ export default function Home() {
           ) : (
             <button
               onClick={startDictation}
-              className="kt-glass group flex items-center gap-2.5 rounded-full border border-line py-2.5 pl-2.5 pr-5 shadow-[var(--sh-lg)] transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]"
+              disabled={processing}
+              className="dictation-pill group flex items-center gap-2.5 rounded-full py-2.5 pl-2.5 pr-5 transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]"
             >
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-b from-ember to-ember-2 text-white shadow-[var(--sh-glow)] transition-transform duration-200 group-hover:scale-105">
                 <MicIcon />
@@ -508,20 +594,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ---------- Footer ---------- */}
-      <footer className="pb-32 pt-6">
-        <div className="mx-auto max-w-3xl px-4 text-center text-xs leading-relaxed text-mut">
-          <p>
-            Klartext läuft direkt in deinem Browser. Es gibt keine Konten und
-            keine Kosten. Teile einfach den Link mit Freunden.
-          </p>
-          <p className="mt-1">
-            Du kannst Klartext auch als App installieren. Wähle dazu im
-            Browser-Menü „Zum Startbildschirm hinzufügen“ oder „App
-            installieren“.
-          </p>
-        </div>
-      </footer>
+      </section>
     </div>
   );
 }
@@ -549,104 +622,111 @@ function SettingsCard({
   };
 
   return (
-    <div className="kt-card grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
-      <label className="block text-sm">
-        <span className="mb-1.5 block font-semibold">Sprache</span>
-        <select
-          value={settings.lang}
-          onChange={(e) => setSettings((s) => ({ ...s, lang: e.target.value }))}
-          className="field"
-        >
-          {LANGUAGES.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.label}
-            </option>
-          ))}
-        </select>
-      </label>
+    <div className="settings-sections">
+      <section className="settings-section">
+        <div className="section-label">
+          <span>Transkription</span>
+          <small>Wähle Qualität oder vollständige Offline-Nutzung</small>
+        </div>
+        <div className="mode-selector">
+          <button
+            data-active={settings.transcriptionMode === "quality"}
+            onClick={() => setSettings((s) => ({ ...s, transcriptionMode: "quality" }))}
+          >
+            <span className="mode-icon"><SparkIcon /></span>
+            <span><b>Beste Qualität</b><small>GPT Transcribe mit Kontext</small></span>
+            <CheckIcon />
+          </button>
+          <button
+            data-active={settings.transcriptionMode === "local"}
+            onClick={() => setSettings((s) => ({ ...s, transcriptionMode: "local" }))}
+          >
+            <span className="mode-icon"><DeviceIcon /></span>
+            <span><b>Lokal</b><small>Offline mit Whisper</small></span>
+            <CheckIcon />
+          </button>
+        </div>
 
-      <label className="block text-sm">
-        <span className="mb-1.5 block font-semibold">Klartext-Aufräumen</span>
-        <select
-          value={settings.cleanup}
-          onChange={(e) =>
-            setSettings((s) => ({
-              ...s,
-              cleanup: e.target.value as Settings["cleanup"],
-            }))
-          }
-          className="field"
-        >
-          <option value="aus">Aus: Rohtranskript behalten</option>
-          <option value="sanft">Sanft: Füllwörter und Interpunktion</option>
-          <option value="stark">Stark: auch Wiederholungen und Satzenden</option>
-        </select>
-      </label>
+        {settings.transcriptionMode === "quality" && (
+          <div className="credential-box pop">
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-semibold">OpenAI API-Key</span>
+              <input
+                type="password"
+                value={settings.openaiApiKey}
+                onChange={(e) => setSettings((s) => ({ ...s, openaiApiKey: e.target.value }))}
+                placeholder="sk-proj-…"
+                autoComplete="off"
+                className="field text-sm"
+              />
+            </label>
+            <p>Wird nur in diesem Browser gespeichert und für die Transkription direkt an OpenAI gesendet.</p>
+          </div>
+        )}
+      </section>
 
-      <label className="block text-sm">
-        <span className="mb-1.5 block font-semibold">
-          Genauigkeit (Datei-Transkription)
-        </span>
-        <select
-          value={settings.whisperModel}
-          onChange={(e) =>
-            setSettings((s) => ({
-              ...s,
-              whisperModel: e.target.value as Settings["whisperModel"],
-            }))
-          }
-          className="field"
-        >
-          <option value="genau">Genau: Whisper small (~250 MB)</option>
-          <option value="schnell">Schnell: Whisper base (~80 MB)</option>
-        </select>
-      </label>
+      <section className="settings-section settings-grid">
+        <label className="block text-sm">
+          <span className="mb-1.5 block font-semibold">Sprache</span>
+          <select value={settings.lang} onChange={(e) => setSettings((s) => ({ ...s, lang: e.target.value }))} className="field">
+            {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+          </select>
+        </label>
 
-      <label className="flex cursor-pointer items-center gap-2.5 self-end pb-2.5 text-sm font-semibold">
-        <input
-          type="checkbox"
-          checked={settings.autoCopy}
-          onChange={(e) =>
-            setSettings((s) => ({ ...s, autoCopy: e.target.checked }))
-          }
-          className="h-4 w-4 accent-[var(--ember)]"
-        />
-        Nach dem Diktat automatisch kopieren
-      </label>
+        <label className="block text-sm">
+          <span className="mb-1.5 block font-semibold">Aufräumen</span>
+          <select
+            value={settings.cleanup}
+            onChange={(e) => setSettings((s) => ({ ...s, cleanup: e.target.value as Settings["cleanup"] }))}
+            className="field"
+          >
+            <option value="aus">Wortgetreu</option>
+            <option value="sanft">Natürlich</option>
+            <option value="stark">Kompakt</option>
+          </select>
+        </label>
 
-      <div className="kt-hair rounded-2xl bg-surface-2 p-4 sm:col-span-2">
-        <label className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold">
+        {settings.transcriptionMode === "local" && (
+          <label className="block text-sm">
+            <span className="mb-1.5 block font-semibold">Lokales Modell</span>
+            <select
+              value={settings.whisperModel}
+              onChange={(e) => setSettings((s) => ({ ...s, whisperModel: e.target.value as Settings["whisperModel"] }))}
+              className="field"
+            >
+              <option value="genau">Whisper small, genauer</option>
+              <option value="schnell">Whisper base, schneller</option>
+            </select>
+          </label>
+        )}
+
+        <label className="toggle-row">
+          <span><b>Automatisch kopieren</b><small>Ergebnis direkt in die Zwischenablage legen</small></span>
           <input
             type="checkbox"
-            checked={settings.polish}
-            onChange={(e) =>
-              setSettings((s) => ({ ...s, polish: e.target.checked }))
-            }
-            className="h-4 w-4 accent-[var(--ember)]"
+            checked={settings.autoCopy}
+            onChange={(e) => setSettings((s) => ({ ...s, autoCopy: e.target.checked }))}
           />
-          KI-Feinschliff mit Claude
-          <span className="chip bg-lav/50 text-lav-ink">eigener API-Key</span>
         </label>
-        <p className="mb-3 mt-1.5 text-xs leading-relaxed text-mut">
-          Korrigiert falsch erkannte Wörter anhand des Kontexts, wie beim
-          Original. Dein Key bleibt nur in diesem Browser gespeichert und wird
-          ausschließlich direkt an die Claude-API gesendet (console.anthropic.com).
-        </p>
-        <input
-          type="password"
-          value={settings.apiKey}
-          onChange={(e) => setSettings((s) => ({ ...s, apiKey: e.target.value }))}
-          placeholder="sk-ant-…"
-          autoComplete="off"
-          className="field text-sm"
-        />
-      </div>
+      </section>
 
-      <div className="sm:col-span-2">
+      <section className="settings-section">
+        <label className="block text-sm">
+          <span className="mb-1.5 block font-semibold">Dein Kontext</span>
+          <textarea
+            value={settings.context}
+            onChange={(e) => setSettings((s) => ({ ...s, context: e.target.value }))}
+            placeholder="Zum Beispiel: Produktentwicklung, Automatisierung, Namen von Kunden oder Projekten"
+            className="field min-h-24 resize-y text-sm"
+          />
+        </label>
+        <p className="setting-help">Hilft der Erkennung, ähnlich klingende Fachbegriffe richtig zuzuordnen.</p>
+      </section>
+
+      <section className="settings-section">
         <p className="mb-1.5 text-sm font-semibold">Persönliches Wörterbuch</p>
         <p className="mb-3 text-xs leading-relaxed text-mut">
-          Namen und Fachbegriffe, die die Erkennung falsch schreibt. Klartext
-          ersetzt sie automatisch, zum Beispiel „wisper flow“ zu „Wispr Flow“.
+          Namen und Fachbegriffe werden dem Qualitätsmodell schon vor der Erkennung als Hinweis mitgegeben.
         </p>
         <div className="flex flex-wrap gap-2">
           <input
@@ -694,7 +774,7 @@ function SettingsCard({
             ))}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
@@ -707,6 +787,36 @@ function Kbd({ children }: { children: React.ReactNode }) {
       {children}
     </kbd>
   );
+}
+
+function NavIcon({ tab }: { tab: Tab }) {
+  const paths: Record<Tab, React.ReactNode> = {
+    diktat: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v4" /></>,
+    dateien: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 15h8M8 18h5" /></>,
+    verlauf: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2M3 12H1" /></>,
+    desktop: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></>,
+  };
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[tab]}</svg>;
+}
+
+function CloseIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>;
+}
+
+function ChevronIcon() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>;
+}
+
+function SparkIcon() {
+  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z" /><path d="m18.5 14 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" /></svg>;
+}
+
+function DeviceIcon() {
+  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="3" /><path d="M9 17h6" /></svg>;
+}
+
+function CheckIcon() {
+  return <svg className="check-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6" /></svg>;
 }
 
 function CopyIcon() {

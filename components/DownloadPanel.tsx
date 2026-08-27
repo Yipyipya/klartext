@@ -27,7 +27,7 @@ const PLATFORMS: Platform[] = [
     os: "mac",
     name: "macOS",
     arch: "Apple Silicon (M1 und neuer)",
-    size: "115 MB",
+    size: "113 MB",
     file: "Klartext-Mac-AppleSilicon.dmg",
     href: `${REL}/Klartext-Mac-AppleSilicon.dmg`,
     Icon: AppleIcon,
@@ -101,7 +101,7 @@ export default function DownloadPanel() {
           {[
             ["Systemweit", "Funktioniert in jedem Programm, nicht nur im Browser."],
             ["Ein Tastendruck", "Shortcut drücken, sprechen, fertig eingefügt."],
-            ["Privat", "Die Spracherkennung läuft lokal auf deinem Gerät."],
+            ["Zwei Modi", "Beste Qualität über OpenAI oder vollständig lokal auf deinem Gerät."],
           ].map(([t, d]) => (
             <div key={t} className="kt-hair rounded-2xl bg-surface-2 p-4">
               <p className="text-sm font-semibold">{t}</p>

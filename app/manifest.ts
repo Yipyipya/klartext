@@ -5,11 +5,11 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Klartext",
     short_name: "Klartext",
     description:
-      "Sprich. Der Rest ist Text. Live-Diktat und Audio-Transkription direkt im Browser.",
+      "Präzises Diktat und Audio-Transkription im Browser und auf dem Desktop.",
     start_url: "/",
     display: "standalone",
-    background_color: "#f6f1e7",
-    theme_color: "#f6f1e7",
+    background_color: "#f2f5f3",
+    theme_color: "#f2f5f3",
     icons: [
       {
         src: "/icon.svg",

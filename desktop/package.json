@@ -1,6 +1,6 @@
 {
   "name": "klartext-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Klartext Desktop – systemweites Diktat per globalem Shortcut, Text landet direkt an der Cursor-Position",
   "main": "main.js",
@@ -19,6 +19,7 @@
     },
     "files": [
       "main.js",
+      "startup.js",
       "preload.js",
       "pill.html",
       "keywin.html",
@@ -26,6 +27,7 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "artifactName": "Klartext-Mac-AppleSilicon.${ext}",
       "target": [
         {
           "target": "dmg",
@@ -40,6 +42,7 @@
       }
     },
     "win": {
+      "artifactName": "Klartext-Windows.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -62,8 +65,5 @@
   "devDependencies": {
     "electron": "^43.1.0",
     "electron-builder": "^26.15.3"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.110.0"
   }
 }

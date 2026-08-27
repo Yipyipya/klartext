@@ -5,10 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --require ./tests/register.cjs --test tests/*.test.cjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.110.0",
     "@huggingface/transformers": "^4.2.0",
     "next": "16.2.10",
     "react": "19.2.4",
