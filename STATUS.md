@@ -92,6 +92,9 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
   Mac-Signaturprüfung grün. Prüfsummen in desktop/RELEASE_CHECKSUMS.md.
 - Das gepackte Mac-Programm 0.1.4 startet im isolierten Smoke-Test bis zum
   geladenen Renderer ohne Mikrofon-, Bedienungshilfen- oder Autostart-Abfrage.
+- Die lokale Installation wurde auf 0.1.4 aktualisiert und gegen den gebauten
+  Paketinhalt geprüft. Genau eine Produktionsinstanz läuft; Qualitätsmodus,
+  gespeicherter API-Key und Autostart-Einstellung sind erhalten.
 
 ## Noch manuell prüfen
 
@@ -111,7 +114,7 @@ Safari-Fix e855ded209f78086d1b85121f428930251fbfd51 auf main übernommen.
 Vercel-Produktion erfolgreich (Deployment 6119223758); normale Adresse im Browser
 mit neuem Diktat-Editor geprüft. Der echte Safari-Sprachtest bleibt offen.
 noindex und Downloadlinks wurden beim vorherigen Release bestätigt.
-GitHub-Release v0.1.3 mit beiden Installern veröffentlicht. Die stabilen
-`releases/latest/download`-Adressen liefern HTTP 200 und zeigen auf v0.1.3.
+GitHub-Release v0.1.4 mit beiden Installern veröffentlicht. Die stabilen
+`releases/latest/download`-Adressen leiten auf v0.1.4 weiter.
 Lokale und von GitHub berechnete SHA-256-Prüfsummen sowie Dateigrößen stimmen
 für beide Assets überein.
