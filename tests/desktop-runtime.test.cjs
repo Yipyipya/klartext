@@ -1,8 +1,11 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
+const fs = require("node:fs");
+const path = require("node:path");
 const { configureRuntime, createFileLogger, installPipeGuards } = require("../desktop/runtime");
 const { ensureAudioContextRunning } = require("../desktop/audio-runtime");
+const { ACCESSIBILITY_SETTINGS_URL, getPasteAccess } = require("../desktop/accessibility");
 
 function mockRuntimeApp(packaged) {
   let userData = "/profile/klartext-desktop";
@@ -68,4 +71,25 @@ test("Pausierter AudioContext wird vor der PCM-Aufnahme aktiviert", async () => 
 test("Nicht aktivierbarer AudioContext wird als Aufnahmefehler behandelt", async () => {
   await assert.rejects(ensureAudioContextRunning({ state: "suspended", async resume() {} }), /suspended/);
   await assert.rejects(ensureAudioContextRunning(null), /fehlt/);
+});
+
+test("Fehlende macOS-Bedienungshilfe blockiert nur das automatische Einfügen", () => {
+  assert.deepEqual(getPasteAccess("darwin", false), {
+    canPaste: false,
+    needsAccessibility: true,
+  });
+  assert.match(ACCESSIBILITY_SETTINGS_URL, /Privacy_Accessibility$/);
+});
+
+test("Windows braucht keine macOS-Bedienungshilfe zum Einfügen", () => {
+  assert.deepEqual(getPasteAccess("win32", false), {
+    canPaste: true,
+    needsAccessibility: false,
+  });
+});
+
+test("Aufnahmecode löst keine Bedienungshilfen-Abfrage mehr aus", () => {
+  const mainSource = fs.readFileSync(path.join(__dirname, "../desktop/main.js"), "utf8");
+  assert.doesNotMatch(mainSource, /isTrustedAccessibilityClient\(true\)/);
+  assert.match(mainSource, /isTrustedAccessibilityClient\(false\)/);
 });

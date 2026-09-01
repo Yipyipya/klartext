@@ -10,6 +10,11 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Aktueller Stand
 
+- Desktop 0.1.4 verhindert, dass eine veraltete macOS-Bedienungshilfe-Freigabe
+  Aufnahme und Transkription blockiert. Beim Aufnahme-Start wird nur noch das
+  Mikrofon angefragt. Fehlt die Freigabe fürs automatische Einfügen, wird der
+  fertige Text zuverlässig in die Zwischenablage kopiert und verständlich gemeldet.
+  Das Tray zeigt den Status und öffnet die passende Systemeinstellung explizit.
 - Desktop 0.1.3 behebt den nachgewiesenen Mac-Konflikt zwischen einer seit dem
   27. August laufenden Entwicklungsinstanz und `/Applications/Klartext.app`.
   Entwicklung nutzt nun ein getrenntes Profil und einen abweichenden Shortcut.
@@ -41,7 +46,7 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 - Uploads überleben den Bereichswechsel; Teilfehler werden klar markiert.
   Originale bleiben erhalten, unvollständige Feinschliff-Ausgaben werden verworfen.
 - Sigill-Korrektur ist wortgrenzensicher und stabil bei wiederholter Anwendung.
-- Desktop 0.1.3: Autostart bei Anmeldung, abschaltbar. Vorbereitung im Hintergrund,
+- Desktop ab 0.1.3: Autostart bei Anmeldung, abschaltbar. Vorbereitung im Hintergrund,
   ohne Mikrofonaufnahme/API-Kosten. Nur im Lokalmodus wird Whisper vorab geladen.
   Ein systemseitig deaktivierter Autostart wird nicht automatisch reaktiviert.
 - Die Desktop-App nutzt denselben Qualitätsmodus, speichert den API-Key über den
@@ -56,9 +61,10 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Verifiziert in diesem Stand
 
-- 39 automatisierte Regressionstests grün, darunter getrennte Entwicklungsprofile
+- 42 automatisierte Regressionstests grün, darunter getrennte Entwicklungsprofile
   und Shortcuts, EPIPE-Behandlung, fehlertolerantes Dateilogging, Aktivierung und
-  Fehler eines pausierten AudioContext sowie Recorder-Ausfall ohne stillen
+  Fehler eines pausierten AudioContext, die nicht blockierende macOS-
+  Bedienungshilfenlogik sowie Recorder-Ausfall ohne stillen
   Browser-Fallback, späte Stop-Daten, leeres Audio, Timeout, Mikrofonverweigerung,
   Retry ohne zusätzliche Audioanfrage beim Feinschliff sowie sechsminütiges Stereo-PCM,
   vollständige Chunk-Abdeckung, Upload-Routing, Teilfehler, Feinschliff-Grenzen,
@@ -81,19 +87,18 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 - MP3-Direktupload derselben Aufnahme (2.392.129 Bytes) erfolgreich, 395 Wörter,
   sechs Kontrollbegriffe jeweils einmal. Eine zusätzliche Wortwiederholung zeigt,
   dass dies kein Nachweis fehlerfreier Erkennung ist.
-- Mac- und Windows-Installer 0.1.3 gebaut. Paketinhalt beider Plattformen enthält
-  Runtime-, Audio- und Logging-Fix sowie die unveränderten Qualitätsmodelle.
+- Mac- und Windows-Installer 0.1.4 gebaut. Paketinhalt beider Plattformen enthält
+  Runtime-, Audio-, Logging- und Bedienungshilfen-Fix sowie die unveränderten Qualitätsmodelle.
   Mac-Signaturprüfung grün. Prüfsummen in desktop/RELEASE_CHECKSUMS.md.
-- Die lokale Installation auf diesem Mac wurde auf 0.1.3 aktualisiert. Genau eine
-  Produktionsinstanz läuft; Qualitätsmodus, gespeicherter Key und Autostart-
-  Einstellung wurden erkannt. Echter Sprachtest mit 0.1.3 noch offen.
+- Das gepackte Mac-Programm 0.1.4 startet im isolierten Smoke-Test bis zum
+  geladenen Renderer ohne Mikrofon-, Bedienungshilfen- oder Autostart-Abfrage.
 
 ## Noch manuell prüfen
 
-1. Mac 0.1.3 mit dem kurzen Diktattest prüfen. Danach eine Anmeldung neu starten
-   und den Autostart bestätigen. Ohne Apple-Notarisierung kann macOS die
-   Registrierung blockieren.
-2. Windows 0.1.3 installieren und Mikrofon, Diktat, Excel-Einfügen und Autostart
+1. Mac 0.1.4 installieren, den alten Klartext-Eintrag unter Bedienungshilfen
+   entfernen, die aktuelle App neu hinzufügen und mit einem kurzen Diktat prüfen.
+   Danach eine Anmeldung neu starten und den Autostart bestätigen.
+2. Windows 0.1.4 installieren und Mikrofon, Diktat, Excel-Einfügen und Autostart
    erneut prüfen. Bei einem Fehler über das Tray „Diagnoseprotokoll anzeigen“
    öffnen. Der Build und die gemockten Tests ersetzen diese Abnahme nicht.
 3. Eine echte längere Sprachmemo (M4A/MP3) sowie optional weitere WAVs testen.

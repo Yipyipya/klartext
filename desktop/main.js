@@ -18,6 +18,7 @@ const path = require("path");
 const fs = require("fs");
 const { configureLogin } = require("./startup");
 const { configureRuntime, createFileLogger, installPipeGuards } = require("./runtime");
+const { ACCESSIBILITY_SETTINGS_URL, getPasteAccess } = require("./accessibility");
 
 const WEB_URL = "https://klartext-ai.vercel.app";
 const IS_MAC = process.platform === "darwin";
@@ -42,6 +43,17 @@ let pillReady = false;
 let preparation = "Wird vorbereitet …";
 let loginState = { supported: false, enabled: false, detail: "Autostart wird geprüft …" };
 let isQuitting = false;
+
+function getCurrentPasteAccess() {
+  if (!IS_MAC) return getPasteAccess(process.platform, true);
+  try {
+    // Nur lesen: Ein Aufnahme-Start darf niemals einen Bedienungshilfen-Dialog auslösen.
+    return getPasteAccess(process.platform, systemPreferences.isTrustedAccessibilityClient(false));
+  } catch (error) {
+    logError("Bedienungshilfen-Status konnte nicht gelesen werden", error);
+    return getPasteAccess(process.platform, false);
+  }
+}
 
 // Nur eine Instanz zulassen. Ohne das startet jeder Aufruf eine neue Kopie
 // (mehrfach im Task-Manager, „(2)“/„(3)“, jeweils eigener RAM-Verbrauch).
@@ -133,11 +145,11 @@ async function startRecording() {
   starting = true;
   updateTray();
   try {
-    // Erst auf ausdrücklichen Aufnahme-Start Berechtigungen anfragen, nie beim Login.
+    // Nur die Mikrofonfreigabe ist für die Aufnahme nötig. Bedienungshilfen werden
+    // erst nach der Transkription fürs automatische Einfügen ausgewertet.
     if (IS_MAC) {
       const allowed = await systemPreferences.askForMediaAccess("microphone");
       if (!allowed) return;
-      systemPreferences.isTrustedAccessibilityClient(true);
     }
   } catch (error) {
     logError("Mikrofonberechtigung konnte nicht geprüft werden", error);
@@ -308,6 +320,21 @@ ipcMain.on("result", async (_e, value) => {
   }
   pill?.hide();
   clipboard.writeText(finalText);
+
+  const pasteAccess = getCurrentPasteAccess();
+  if (!pasteAccess.canPaste) {
+    processing = false;
+    updateTray();
+    logError("Automatisches Einfügen ist nicht freigegeben; Text wurde kopiert");
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "Text wurde kopiert",
+        body: "Für automatisches Einfügen Klartext einmal neu unter Bedienungshilfen freigeben.",
+      }).show();
+    }
+    return;
+  }
+
   const onErr = (err) => {
     processing = false;
     updateTray();
@@ -421,6 +448,7 @@ ipcMain.on("prepared", (event, result) => {
 /* ---------- Tray (Menüleiste) ---------- */
 function updateTray() {
   if (!tray) return;
+  const pasteAccess = getCurrentPasteAccess();
   if (IS_MAC) tray.setTitle(recording ? " 🔴" : " 🎙️");
   const langItems = [
     ["Deutsch", "de"],
@@ -528,11 +556,14 @@ function updateTray() {
       ...(IS_MAC
         ? [
             {
-              label: "Berechtigung fürs Einfügen prüfen",
-              click: () => {
-                // Öffnet ggf. den macOS-Dialog für Bedienungshilfen
-                systemPreferences.isTrustedAccessibilityClient(true);
-              },
+              label: pasteAccess.canPaste
+                ? "Automatisches Einfügen: bereit ✓"
+                : "Automatisches Einfügen: Freigabe erneuern",
+              enabled: false,
+            },
+            {
+              label: "Bedienungshilfen in macOS öffnen",
+              click: () => shell.openExternal(ACCESSIBILITY_SETTINGS_URL),
             },
           ]
         : []),
