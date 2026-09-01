@@ -106,5 +106,7 @@ Safari-Fix e855ded209f78086d1b85121f428930251fbfd51 auf main übernommen.
 Vercel-Produktion erfolgreich (Deployment 6119223758); normale Adresse im Browser
 mit neuem Diktat-Editor geprüft. Der echte Safari-Sprachtest bleibt offen.
 noindex und Downloadlinks wurden beim vorherigen Release bestätigt.
-GitHub-Release v0.1.2 ist der bisher veröffentlichte Desktop-Stand. Release 0.1.3
-ist lokal gebaut und geprüft, die Veröffentlichung steht noch aus.
+GitHub-Release v0.1.3 mit beiden Installern veröffentlicht. Die stabilen
+`releases/latest/download`-Adressen liefern HTTP 200 und zeigen auf v0.1.3.
+Lokale und von GitHub berechnete SHA-256-Prüfsummen sowie Dateigrößen stimmen
+für beide Assets überein.
