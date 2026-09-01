@@ -17,15 +17,18 @@ const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const { configureLogin } = require("./startup");
+const { configureRuntime, createFileLogger, installPipeGuards } = require("./runtime");
 
-const WEB_URL = "https://klartext-adapt-learn.vercel.app";
+const WEB_URL = "https://klartext-ai.vercel.app";
 const IS_MAC = process.platform === "darwin";
 const IS_WIN = process.platform === "win32";
-// macOS: ⌥+Leertaste. Windows/Linux: Strg+Umschalt+Leertaste
-// (Alt+Space öffnet unter Windows das System-Fenstermenü, daher anders).
-const HOTKEY = IS_MAC ? "Alt+Space" : "Control+Shift+Space";
-const HOTKEY_LABEL = IS_MAC ? "⌥ + Leertaste" : "Strg + Umschalt + Leertaste";
 const SMOKE_TEST = process.argv.includes("--smoke-test");
+const runtime = configureRuntime(app, process.platform, process.env, SMOKE_TEST);
+const HOTKEY = runtime.hotkey;
+const HOTKEY_LABEL = runtime.hotkeyLabel;
+const logPath = path.join(app.getPath("userData"), "klartext.log");
+const logError = createFileLogger(fs, logPath);
+installPipeGuards([process.stdout, process.stderr], (error) => logError("Ausgabekanal geschlossen", error));
 
 const PILL_W = 520;
 const PILL_H = 210; // Platz für die Live-Mitschrift über der Pill
@@ -137,7 +140,7 @@ async function startRecording() {
       systemPreferences.isTrustedAccessibilityClient(true);
     }
   } catch (error) {
-    console.error("Mikrofonberechtigung konnte nicht geprüft werden:", error?.message);
+    logError("Mikrofonberechtigung konnte nicht geprüft werden", error);
     return;
   } finally {
     starting = false;
@@ -282,10 +285,10 @@ ipcMain.on("result", async (_e, value) => {
         pill?.webContents.send("refining-start");
         finalText = canonicalizeTerms(await refineWithOpenAI(finalText));
       } catch (refinementError) {
-        console.error("Text-Feinschliff fehlgeschlagen, Transkription wird beibehalten:", refinementError?.message);
+        logError("Text-Feinschliff fehlgeschlagen, Transkription wird beibehalten", refinementError);
       }
     } catch (err) {
-      console.error("Cloud-Transkription fehlgeschlagen:", err?.message);
+      logError("Cloud-Transkription fehlgeschlagen", err);
       if (Notification.isSupported()) {
         new Notification({
           title: "Klartext konnte nicht transkribieren",
@@ -309,10 +312,7 @@ ipcMain.on("result", async (_e, value) => {
     processing = false;
     updateTray();
     if (err) {
-      console.error(
-        "Einfügen fehlgeschlagen, der Text liegt in der Zwischenablage:",
-        err.message
-      );
+      logError("Einfügen fehlgeschlagen, der Text liegt in der Zwischenablage", err);
     }
   };
   if (IS_MAC) {
@@ -377,12 +377,19 @@ ipcMain.on("save-api-key", (_e, key) => {
 ipcMain.on("close-key-window", () => keyWin?.close());
 
 ipcMain.on("pill-error", (_e, message) => {
-  console.error("Pill-Fehler:", message);
+  if (_e.sender !== pill?.webContents) return;
+  logError("Aufnahmefehler", message);
   pill?.hide();
   recording = false;
   processing = false;
   globalShortcut.unregister("Escape");
   updateTray();
+  if (Notification.isSupported()) {
+    new Notification({
+      title: "Klartext konnte nicht aufnehmen",
+      body: String(message || "Bitte prüfe Mikrofon und Audioeinstellungen.").slice(0, 240),
+    }).show();
+  }
 });
 
 function prepareSelectedMode() {
@@ -509,6 +516,13 @@ function updateTray() {
       },
       { label: loginState.detail, enabled: false },
       ...(IS_MAC ? [{ label: "Anmeldeobjekte in macOS öffnen", click: () => shell.openExternal("x-apple.systempreferences:com.apple.LoginItems-Settings.extension") }] : []),
+      {
+        label: "Diagnoseprotokoll anzeigen",
+        click: () => {
+          logError("Diagnoseprotokoll geöffnet");
+          shell.showItemInFolder(logPath);
+        },
+      },
       { type: "separator" },
       { label: "Klartext Web-App öffnen", click: () => shell.openExternal(WEB_URL) },
       ...(IS_MAC
@@ -592,10 +606,20 @@ app.whenReady().then(async () => {
   createTray();
 
   const ok = globalShortcut.register(HOTKEY, toggleRecording);
-  if (!ok) console.error(`Globaler Shortcut ${HOTKEY} konnte nicht registriert werden.`);
+  if (!ok) {
+    preparation = `Shortcut ${HOTKEY_LABEL} ist bereits belegt`;
+    logError(`Globaler Shortcut ${HOTKEY} konnte nicht registriert werden`);
+    updateTray();
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "Klartext-Shortcut ist bereits belegt",
+        body: `${HOTKEY_LABEL} wird von einer anderen App verwendet. Diktieren bleibt über das Klartext-Menü möglich.`,
+      }).show();
+    }
+  }
 
   if (SMOKE_TEST) {
-    setTimeout(() => { console.error("SMOKE_TIMEOUT"); quitApp(); }, 15_000).unref();
+    setTimeout(() => { logError("SMOKE_TIMEOUT"); quitApp(); }, 15_000).unref();
     return;
   }
 });

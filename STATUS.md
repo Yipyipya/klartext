@@ -1,6 +1,6 @@
 # Klartext Status
 
-Stand: 27. August 2026
+Stand: 1. September 2026
 
 ## Produktziel
 
@@ -10,11 +10,22 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Aktueller Stand
 
+- Desktop 0.1.3 behebt den nachgewiesenen Mac-Konflikt zwischen einer seit dem
+  27. August laufenden Entwicklungsinstanz und `/Applications/Klartext.app`.
+  Entwicklung nutzt nun ein getrenntes Profil und einen abweichenden Shortcut.
+  `EPIPE` an einem geschlossenen Terminal wird behandelt statt den Main-Prozess
+  zu beenden. Aufnahme- und API-Fehler landen zusätzlich im lokalen Protokoll.
+- Der Audiokanal wird nach der Mikrofonfreigabe explizit aktiviert. Fehler aus
+  AudioContext und Mikrofon werden vollständig abgefangen, sichtbar gemeldet und
+  setzen den App-Zustand zurück. Das schließt einen gemeinsamen Mac-/Windows-
+  Fehlerpfad; die genaue Ursache des Windows-Vorfalls ist ohne damaliges Protokoll
+  nicht nachgewiesen.
 - Safari-/Web-Fix: Qualitätsaufnahme ohne parallele Browser-Spracherkennung,
   MP4/AAC-Präferenz mit Format-Fallback und vollständigem Abschluss. Keine stille
   Ausgabe von Browser-Text bei Aufnahme- oder API-Fehlern. Dauerhafter Ergebnisstatus,
   Retry mit derselben Aufnahme bzw. nur dem vorhandenen Rohtext beim Feinschliff.
-  Qualitätsmodelle unverändert; Desktop-Pakete für diesen Fix nicht verändert.
+  Qualitätsmodelle unverändert. Die später ergänzten Desktop-Korrekturen sind in
+  Version 0.1.3 zusammengefasst.
 - Die Web-App hat ein neues, hochwertiges Workspace-Interface mit responsiver
   Navigation, Einstellungs-Drawer und hellem sowie dunklem Design.
 - Der Qualitätsmodus nutzt `gpt-transcribe` und gibt Kontext, Sprache und
@@ -30,7 +41,7 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 - Uploads überleben den Bereichswechsel; Teilfehler werden klar markiert.
   Originale bleiben erhalten, unvollständige Feinschliff-Ausgaben werden verworfen.
 - Sigill-Korrektur ist wortgrenzensicher und stabil bei wiederholter Anwendung.
-- Desktop 0.1.2: Autostart bei Anmeldung, abschaltbar. Vorbereitung im Hintergrund,
+- Desktop 0.1.3: Autostart bei Anmeldung, abschaltbar. Vorbereitung im Hintergrund,
   ohne Mikrofonaufnahme/API-Kosten. Nur im Lokalmodus wird Whisper vorab geladen.
   Ein systemseitig deaktivierter Autostart wird nicht automatisch reaktiviert.
 - Die Desktop-App nutzt denselben Qualitätsmodus, speichert den API-Key über den
@@ -45,7 +56,9 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Verifiziert in diesem Stand
 
-- 32 automatisierte Regressionstests grün, darunter Recorder-Ausfall ohne stillen
+- 39 automatisierte Regressionstests grün, darunter getrennte Entwicklungsprofile
+  und Shortcuts, EPIPE-Behandlung, fehlertolerantes Dateilogging, Aktivierung und
+  Fehler eines pausierten AudioContext sowie Recorder-Ausfall ohne stillen
   Browser-Fallback, späte Stop-Daten, leeres Audio, Timeout, Mikrofonverweigerung,
   Retry ohne zusätzliche Audioanfrage beim Feinschliff sowie sechsminütiges Stereo-PCM,
   vollständige Chunk-Abdeckung, Upload-Routing, Teilfehler, Feinschliff-Grenzen,
@@ -56,7 +69,8 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
   Screenshot im Desktoplayout, keine Browser-Konsolenfehler. Kein echter Safari-
   End-to-End-Sprachtest. Ein kurz gestarteter lokaler Mikrofontest wurde durch
   Schließen des Tabs ohne Transkriptionsanfrage abgebrochen.
-- Electron-Smoke-Test bis zum geladenen Renderer grün, ohne Aufnahme/Autostart.
+- Electron-Smoke-Test des gepackten Mac-Programms bis zum geladenen Renderer grün,
+  mit isoliertem temporären Profil und ohne Aufnahme, API oder Autostart.
 - Zusätzlicher Startversuch des Mac-Pakets wartete auf eine Schlüsselbundfreigabe
   für die neu signierte App und wurde beendet. Paket-Signaturprüfung ist grün;
   tatsächlicher Erststart mit Freigabe bleibt ein manueller Abnahmepunkt.
@@ -67,31 +81,30 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 - MP3-Direktupload derselben Aufnahme (2.392.129 Bytes) erfolgreich, 395 Wörter,
   sechs Kontrollbegriffe jeweils einmal. Eine zusätzliche Wortwiederholung zeigt,
   dass dies kein Nachweis fehlerfreier Erkennung ist.
-- Mac- und Windows-Installer 0.1.2 gebaut; enthalten die unveränderten
-  Qualitätsmodelle und neue Autostart-Logik. Prüfsummen in desktop/RELEASE_CHECKSUMS.md.
+- Mac- und Windows-Installer 0.1.3 gebaut. Paketinhalt beider Plattformen enthält
+  Runtime-, Audio- und Logging-Fix sowie die unveränderten Qualitätsmodelle.
+  Mac-Signaturprüfung grün. Prüfsummen in desktop/RELEASE_CHECKSUMS.md.
+- Die lokale Installation auf diesem Mac wurde auf 0.1.3 aktualisiert. Genau eine
+  Produktionsinstanz läuft; Qualitätsmodus, gespeicherter Key und Autostart-
+  Einstellung wurden erkannt. Echter Sprachtest mit 0.1.3 noch offen.
 
 ## Noch manuell prüfen
 
-1. Safari nach dem Website-Update neu laden und den 30-Sekunden-Text aus
-   evals/test-script.de.md erneut im Qualitätsmodus diktieren. Auf die ausdrückliche
-   Abschlussmeldung warten. Bisheriger Safari-Nutzertest deutlich schlechter als
-   Desktop; genaue Fehlerursache dieser Sitzung mangels Ereignisprotokoll nicht
-   belegt. Der stille Fallback wurde im Code und mit gemocktem Recorder nachgewiesen.
-   Automatisierte Tests ersetzen die echte Safari-/Mikrofonabnahme nicht.
-2. Eine echte längere Sprachmemo (M4A/MP3) sowie optional weitere WAVs testen.
-3. Mac 0.1.2 in Programme installieren. Autostart-Status und echte Anmeldung
-   prüfen. Ohne Apple-Notarisierung kann macOS die Registrierung blockieren;
-   dann einmalig in Anmeldeobjekte hinzufügen.
-4. Windows 0.1.2 auf einem echten PC installieren: Diktat, Einfügen, Mikrofon,
-   Anmeldung und Abschalten des Autostarts testen. Der Build allein ersetzt das nicht.
+1. Mac 0.1.3 mit dem kurzen Diktattest prüfen. Danach eine Anmeldung neu starten
+   und den Autostart bestätigen. Ohne Apple-Notarisierung kann macOS die
+   Registrierung blockieren.
+2. Windows 0.1.3 installieren und Mikrofon, Diktat, Excel-Einfügen und Autostart
+   erneut prüfen. Bei einem Fehler über das Tray „Diagnoseprotokoll anzeigen“
+   öffnen. Der Build und die gemockten Tests ersetzen diese Abnahme nicht.
+3. Eine echte längere Sprachmemo (M4A/MP3) sowie optional weitere WAVs testen.
 
 ## Bereitstellung
 
 Bestehendes Projekt: Yipyipya/klartext, Vercel-Produktionszweig main.
-Adresse: https://klartext-adapt-learn.vercel.app
+Adresse: https://klartext-ai.vercel.app
 Safari-Fix e855ded209f78086d1b85121f428930251fbfd51 auf main übernommen.
 Vercel-Produktion erfolgreich (Deployment 6119223758); normale Adresse im Browser
 mit neuem Diktat-Editor geprüft. Der echte Safari-Sprachtest bleibt offen.
 noindex und Downloadlinks wurden beim vorherigen Release bestätigt.
-GitHub-Release v0.1.2 mit beiden unveränderten Installern bereitgestellt;
-hochgeladene SHA-256-Prüfsummen stimmen mit den lokalen Dateien überein.
+GitHub-Release v0.1.2 ist der bisher veröffentlichte Desktop-Stand. Release 0.1.3
+ist lokal gebaut und geprüft, die Veröffentlichung steht noch aus.

@@ -90,6 +90,7 @@
     </div>
   </div>
 
+<script src="audio-runtime.js"></script>
 <script type="module">
   const statusEl = document.getElementById("status");
   const timerEl = document.getElementById("timer");
@@ -327,42 +328,52 @@
         return;
       }
       stream = requestedStream;
-    } catch {
+    } catch (error) {
       recordingActive = false;
-      window.klartext.error("Kein Mikrofonzugriff");
+      window.klartext.error(error?.name === "NotAllowedError"
+        ? "Kein Mikrofonzugriff. Bitte die Mikrofonberechtigung für Klartext erlauben."
+        : `Mikrofon konnte nicht geöffnet werden: ${error?.message || "unbekannter Fehler"}`);
       return;
     }
 
-    // Direkt als 16-kHz-PCM aufnehmen – daraus speist sich Live-Vorschau UND Endergebnis
-    actx = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const src = actx.createMediaStreamSource(stream);
-    const analyser = actx.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0.75;
-    src.connect(analyser);
+    try {
+      // Direkt als 16-kHz-PCM aufnehmen. AudioContext kann in einem unsichtbaren
+      // Hintergrundfenster zunächst pausiert sein, deshalb explizit aktivieren.
+      actx = new AudioContext({ sampleRate: SAMPLE_RATE });
+      await window.KlartextAudioRuntime.ensureAudioContextRunning(actx);
+      const src = actx.createMediaStreamSource(stream);
+      const analyser = actx.createAnalyser();
+      analyser.fftSize = 128;
+      analyser.smoothingTimeConstant = 0.75;
+      src.connect(analyser);
 
-    procNode = actx.createScriptProcessor(4096, 1, 1);
-    procNode.onaudioprocess = (e) => {
-      if (!recordingActive) return;
-      const c = new Float32Array(e.inputBuffer.getChannelData(0));
-      pcmChunks.push(c);
-      totalSamples += c.length;
-    };
-    const mute = actx.createGain();
-    mute.gain.value = 0; // ScriptProcessor braucht eine Verbindung, aber kein Echo
-    src.connect(procNode);
-    procNode.connect(mute);
-    mute.connect(actx.destination);
+      procNode = actx.createScriptProcessor(4096, 1, 1);
+      procNode.onaudioprocess = (e) => {
+        if (!recordingActive) return;
+        const c = new Float32Array(e.inputBuffer.getChannelData(0));
+        pcmChunks.push(c);
+        totalSamples += c.length;
+      };
+      const mute = actx.createGain();
+      mute.gain.value = 0;
+      src.connect(procNode);
+      procNode.connect(mute);
+      mute.connect(actx.destination);
 
-    drawWave(analyser);
-    startedAt = Date.now();
-    timerIv = setInterval(() => {
-      const s = Math.floor((Date.now() - startedAt) / 1000);
-      timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-    }, 400);
-    if (currentMode === "local") {
-      liveIv = setInterval(liveTick, 1500);
-      getTranscriber(currentModelId).catch(() => {});
+      drawWave(analyser);
+      startedAt = Date.now();
+      timerIv = setInterval(() => {
+        const s = Math.floor((Date.now() - startedAt) / 1000);
+        timerEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }, 400);
+      if (currentMode === "local") {
+        liveIv = setInterval(liveTick, 1500);
+        getTranscriber(currentModelId).catch(() => {});
+      }
+    } catch (error) {
+      recordingActive = false;
+      stopCapture();
+      window.klartext.error(`Audioaufnahme konnte nicht gestartet werden: ${error?.message || "unbekannter Fehler"}`);
     }
   });
 

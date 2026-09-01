@@ -1,6 +1,6 @@
 {
   "name": "klartext-desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Klartext Desktop – systemweites Diktat per globalem Shortcut, Text landet direkt an der Cursor-Position",
   "main": "main.js",
@@ -19,6 +19,8 @@
     },
     "files": [
       "main.js",
+      "runtime.js",
+      "audio-runtime.js",
       "startup.js",
       "preload.js",
       "pill.html",
