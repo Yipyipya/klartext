@@ -131,9 +131,9 @@ Safari-Fix e855ded209f78086d1b85121f428930251fbfd51 auf main übernommen.
 Vercel-Produktion erfolgreich (Deployment 6119223758); normale Adresse im Browser
 mit neuem Diktat-Editor geprüft. Der echte Safari-Sprachtest bleibt offen.
 noindex und Downloadlinks wurden beim vorherigen Release bestätigt.
-GitHub-Release v0.1.4 mit beiden Installern veröffentlicht. Die stabilen
-`releases/latest/download`-Adressen leiten auf v0.1.4 weiter.
+GitHub-Release v0.2.0 mit beiden Installern veröffentlicht. Die stabilen
+`releases/latest/download`-Adressen der Website leiten auf v0.2.0 weiter.
 Lokale und von GitHub berechnete SHA-256-Prüfsummen sowie Dateigrößen stimmen
-für beide Assets überein.
-Die 0.2.0-Installer sind lokal gebaut und geprüft, aber noch nicht als neues
-GitHub-Release veröffentlicht. Der echte Windows-Test steht vorher noch aus.
+für beide Assets überein. Die Produktionswebsite antwortet mit HTTP 200; der
+Windows-Download wurde bis zum 99.728.117 Byte großen Release-Asset verifiziert.
+Der echte Windows-Test steht noch aus.
