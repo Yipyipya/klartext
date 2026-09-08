@@ -43,3 +43,10 @@ next-env.d.ts
 # Desktop-App
 desktop/node_modules
 desktop/dist
+desktop/wake-bundle.js
+desktop/wakesetup-bundle.js
+desktop/rustpotter-worker.js
+desktop/rustpotter-worklet.js
+desktop/rustpotter-runtime.wasm
+desktop/rustpotter-creator.wasm
+desktop/rustpotter-LICENSE.txt

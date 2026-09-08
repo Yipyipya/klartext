@@ -12,6 +12,7 @@ const {
   shell,
   nativeImage,
   Notification,
+  powerSaveBlocker,
 } = require("electron");
 const { execFile } = require("child_process");
 const path = require("path");
@@ -19,11 +20,26 @@ const fs = require("fs");
 const { configureLogin } = require("./startup");
 const { configureRuntime, createFileLogger, installPipeGuards } = require("./runtime");
 const { ACCESSIBILITY_SETTINGS_URL, getPasteAccess } = require("./accessibility");
+const {
+  loadEnrolledWakeModels,
+  saveEnrolledWakeModels,
+  removeEnrolledWakeModels,
+} = require("./wake-runtime");
+const { trimTailMs, stripTrailingStopCommand } = require("./wake-controller");
 
 const WEB_URL = "https://klartext-ai.vercel.app";
 const IS_MAC = process.platform === "darwin";
 const IS_WIN = process.platform === "win32";
 const SMOKE_TEST = process.argv.includes("--smoke-test");
+const SETUP_VOICE = process.argv.includes("--setup-voice");
+
+// Der lokale Wake-Word-Renderer muss auch als vollständig unsichtbares
+// Menüleistenfenster kontinuierlich Audio verarbeiten. Diese Schalter gelten
+// nur für Klartext und verhindern, dass Chromium ihn im Hintergrund einfriert.
+app.commandLine.appendSwitch("disable-background-timer-throttling");
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 const runtime = configureRuntime(app, process.platform, process.env, SMOKE_TEST);
 const HOTKEY = runtime.hotkey;
 const HOTKEY_LABEL = runtime.hotkeyLabel;
@@ -43,6 +59,15 @@ let pillReady = false;
 let preparation = "Wird vorbereitet …";
 let loginState = { supported: false, enabled: false, detail: "Autostart wird geprüft …" };
 let isQuitting = false;
+let wakeWin = null;
+let wakeReady = false;
+let wakeGeneration = 0;
+let pendingWakeConfig = null;
+let wakeStatus = { state: "disabled", detail: "Sprachaktivierung ist ausgeschaltet" };
+let wakeModelsAvailable = false;
+let wakePowerSaveBlockerId = null;
+let wakeReadyTimer = null;
+let wakeReloadAttempts = 0;
 
 function getCurrentPasteAccess() {
   if (!IS_MAC) return getPasteAccess(process.platform, true);
@@ -58,9 +83,10 @@ function getCurrentPasteAccess() {
 // Nur eine Instanz zulassen. Ohne das startet jeder Aufruf eine neue Kopie
 // (mehrfach im Task-Manager, „(2)“/„(3)“, jeweils eigener RAM-Verbrauch).
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
-app.on("second-instance", () => {
+app.on("second-instance", (_event, argv) => {
   // Zweiter Start: vorhandene Instanz zeigt ihr Menü, statt sich zu verdoppeln.
-  if (tray) tray.popUpContextMenu();
+  if (argv.includes("--setup-voice")) openWakeSetupWindow();
+  else if (tray) tray.popUpContextMenu();
 });
 
 /* ---------- Einstellungen (userData/settings.json) ---------- */
@@ -72,6 +98,7 @@ const SETTINGS_DEFAULTS = {
   model: "genau", // "genau" (whisper-small) | "schnell" (whisper-base)
   launchAtLogin: true,
   openaiKeyEnc: null, // verschlüsselt über Schlüsselbund / Credential Vault
+  voiceActivation: false,
   context: "Software, KI, Automatisierung, Produktarbeit und persönliche Nachrichten",
 };
 
@@ -92,6 +119,8 @@ function saveSettings(s) {
 }
 
 let settings = null;
+let cachedOpenAIKey = null;
+let openAIKeyCacheReady = false;
 
 /* ---------- Pill-Fenster ---------- */
 function createPill() {
@@ -116,6 +145,9 @@ function createPill() {
   });
   pill.setAlwaysOnTop(true, "screen-saver");
   pill.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  pill.webContents.on("render-process-gone", (_event, details) => {
+    logError("Aufnahmefenster wurde unerwartet beendet", details?.reason || "unbekannt");
+  });
   // Mikrofon-Zugriff im Fenster erlauben (v. a. für Windows/Linux nötig)
   pill.webContents.session.setPermissionRequestHandler((_wc, permission, cb) => {
     cb(permission === "media" || permission === "microphone");
@@ -136,9 +168,10 @@ function positionPill() {
 }
 
 /* ---------- Aufnahme-Steuerung ---------- */
-async function startRecording() {
+async function startRecording(trigger = "shortcut") {
   if (recording || starting || processing || !pill || !pillReady) return;
-  if (settings.mode === "quality" && !getOpenAIKey()) {
+  const hasStoredOpenAIKey = Boolean(settings.openaiKeyEnc);
+  if (settings.mode === "quality" && !hasStoredOpenAIKey) {
     openKeyWindow();
     return;
   }
@@ -147,9 +180,13 @@ async function startRecording() {
   try {
     // Nur die Mikrofonfreigabe ist für die Aufnahme nötig. Bedienungshilfen werden
     // erst nach der Transkription fürs automatische Einfügen ausgewertet.
-    if (IS_MAC) {
+    if (IS_MAC && systemPreferences.getMediaAccessStatus("microphone") !== "granted") {
       const allowed = await systemPreferences.askForMediaAccess("microphone");
       if (!allowed) return;
+    }
+    if (trigger === "voice") {
+      shell.beep();
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
   } catch (error) {
     logError("Mikrofonberechtigung konnte nicht geprüft werden", error);
@@ -160,22 +197,32 @@ async function startRecording() {
   }
   recording = true;
   positionPill();
-  pill.showInactive(); // anzeigen ohne Fokus zu übernehmen
+  // Das vorher aktive Textfeld muss den Fokus behalten, damit das Ergebnis an
+  // exakt derselben Cursorposition eingefügt werden kann.
+  pill.showInactive();
+  pill.moveTop();
+  pill.setAlwaysOnTop(true, "screen-saver");
   pill.webContents.send("start", {
     lang: settings.lang,
     mode: settings.mode,
     model: settings.model,
-    hasOpenAIKey: Boolean(getOpenAIKey()),
+    hasOpenAIKey: hasStoredOpenAIKey,
+    trigger,
   });
+  setWakeRecordingState(true);
+  if (trigger === "voice") {
+    logError("Sprachbefehl hat Aufnahme gestartet", `Pill sichtbar: ${pill.isVisible()}`);
+  }
   globalShortcut.register("Escape", cancelRecording);
   updateTray();
 }
 
-function stopRecording() {
+function stopRecording(reason = "manual") {
   if (!recording || !pill) return;
   recording = false;
   processing = true;
-  pill.webContents.send("stop"); // Renderer transkribiert und meldet "result"
+  pill.webContents.send("stop", { reason, trimTailMs: trimTailMs(reason) });
+  setWakeRecordingState(false);
   globalShortcut.unregister("Escape");
   updateTray();
 }
@@ -184,6 +231,7 @@ function cancelRecording() {
   if (!pill || processing) return;
   recording = false;
   pill.webContents.send("cancel");
+  setWakeRecordingState(false);
   pill.hide();
   globalShortcut.unregister("Escape");
   updateTray();
@@ -197,8 +245,11 @@ function toggleRecording() {
 /* ---------- Hochwertige Transkription (eigener OpenAI API-Key) ---------- */
 function getOpenAIKey() {
   if (!settings?.openaiKeyEnc) return null;
+  if (openAIKeyCacheReady) return cachedOpenAIKey;
   try {
-    return safeStorage.decryptString(Buffer.from(settings.openaiKeyEnc, "base64"));
+    cachedOpenAIKey = safeStorage.decryptString(Buffer.from(settings.openaiKeyEnc, "base64"));
+    openAIKeyCacheReady = true;
+    return cachedOpenAIKey;
   } catch {
     return null;
   }
@@ -312,6 +363,12 @@ ipcMain.on("result", async (_e, value) => {
     }
   }
 
+  // Der reservierte Endbefehl gehört nie in das Ergebnis. Die Bereinigung ist
+  // absichtlich nur am Textende aktiv, damit Erwähnungen mitten im Diktat
+  // erhalten bleiben. Sie greift auch, falls Stille und Wake-Word fast
+  // gleichzeitig eintreffen und der Stille-Grund zuerst übermittelt wird.
+  finalText = stripTrailingStopCommand(finalText);
+
   if (!finalText) {
     processing = false;
     updateTray();
@@ -393,8 +450,12 @@ ipcMain.on("save-api-key", (_e, key) => {
   const trimmed = (key || "").trim();
   if (trimmed && safeStorage.isEncryptionAvailable()) {
     settings.openaiKeyEnc = safeStorage.encryptString(trimmed).toString("base64");
+    cachedOpenAIKey = trimmed;
+    openAIKeyCacheReady = true;
   } else {
     settings.openaiKeyEnc = null;
+    cachedOpenAIKey = null;
+    openAIKeyCacheReady = false;
   }
   saveSettings(settings);
   keyWin?.close();
@@ -403,12 +464,226 @@ ipcMain.on("save-api-key", (_e, key) => {
 
 ipcMain.on("close-key-window", () => keyWin?.close());
 
+/* ---------- Persönliche Sprachbefehle und Hintergrundlistener ---------- */
+let wakeSetupWin = null;
+
+const wakeModelDir = () => path.join(app.getPath("userData"), "wake-models");
+
+function openWakeSetupWindow() {
+  if (wakeSetupWin) {
+    wakeSetupWin.focus();
+    return;
+  }
+  wakeGeneration += 1;
+  pendingWakeConfig = { enabled: false };
+  if (wakeReady && !wakeWin?.isDestroyed()) wakeWin.webContents.send("wake-configure", pendingWakeConfig);
+  wakeStatus = { state: "setup", detail: "Sprachbefehle werden eingerichtet …" };
+  updateTray();
+  wakeSetupWin = new BrowserWindow({
+    width: 620,
+    height: 650,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    title: "Klartext – Sprachaktivierung",
+    webPreferences: { preload: path.join(__dirname, "preload.js") },
+  });
+  wakeSetupWin.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === "media" || permission === "microphone");
+  });
+  wakeSetupWin.loadFile("wakekey.html");
+  wakeSetupWin.on("closed", () => {
+    wakeSetupWin = null;
+    refreshWakeActivation();
+  });
+}
+
+function setWakeRecordingState(active) {
+  if (wakeReady && !wakeWin?.isDestroyed()) {
+    wakeWin.webContents.send("wake-recording-state", Boolean(active));
+  }
+}
+
+function createWakeWindow() {
+  if (wakeWin && !wakeWin.isDestroyed()) return wakeWin;
+  wakeReady = false;
+  wakeReloadAttempts = 0;
+  wakeWin = new BrowserWindow({
+    // Das Fenster bleibt sichtbar, aber leer und praktisch unsichtbar. Ein
+    // komplett außerhalb des Bildschirms liegendes Fenster kann von macOS bei
+    // getUserMedia pausiert werden. focusable: false erhält trotzdem immer das
+    // zuvor aktive Textfeld.
+    x: 0,
+    y: 0,
+    width: 2,
+    height: 2,
+    show: true,
+    opacity: 0.01,
+    transparent: true,
+    backgroundColor: "#00000000",
+    skipTaskbar: true,
+    focusable: false,
+    webPreferences: {
+      preload: path.join(__dirname, "wake-preload.js"),
+      backgroundThrottling: false,
+    },
+  });
+  wakeWin.setIgnoreMouseEvents(true);
+  wakeWin.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === "media" || permission === "microphone");
+  });
+  wakeWin.loadFile("wake.html");
+  wakeWin.webContents.on("did-finish-load", () => {
+    logError("Sprachlistener-Seite wurde geladen");
+    clearTimeout(wakeReadyTimer);
+    wakeReadyTimer = setTimeout(() => {
+      if (!wakeReady && !isQuitting && wakeWin && !wakeWin.isDestroyed()) {
+        wakeReloadAttempts += 1;
+        if (wakeReloadAttempts <= 2) {
+          logError("Sprachlistener antwortet nicht und wird neu geladen", `Versuch ${wakeReloadAttempts}`);
+          wakeWin.webContents.reloadIgnoringCache();
+        } else {
+          wakeStatus = { state: "error", detail: "Sprachlistener konnte nicht gestartet werden" };
+          logError("Sprachlistener blieb nach zwei Neustarts ohne Antwort");
+          updateTray();
+        }
+      }
+    }, 4_000);
+  });
+  wakeWin.webContents.on("render-process-gone", (_event, details) => {
+    logError("Sprachlistener wurde unerwartet beendet", details?.reason || "unbekannt");
+    wakeReady = false;
+    wakeStatus = { state: "error", detail: "Sprachlistener wird neu gestartet …" };
+    updateTray();
+    if (!isQuitting) {
+      wakeWin?.destroy();
+      wakeWin = null;
+      setTimeout(() => refreshWakeActivation(), 750).unref();
+    }
+  });
+  wakeWin.webContents.on("did-fail-load", (_event, code, description) => {
+    logError("Sprachlistener konnte nicht geladen werden", `${code}: ${description}`);
+  });
+  wakeWin.on("closed", () => {
+    clearTimeout(wakeReadyTimer);
+    wakeReadyTimer = null;
+    wakeWin = null;
+    wakeReady = false;
+  });
+  return wakeWin;
+}
+
+async function refreshWakeActivation() {
+  const generation = ++wakeGeneration;
+  const keywords = await loadEnrolledWakeModels({ fsPromises: fs.promises, modelDir: wakeModelDir() });
+  if (generation !== wakeGeneration) return;
+  wakeModelsAvailable = Boolean(keywords);
+  if (!settings.voiceActivation || !keywords) {
+    if (wakePowerSaveBlockerId !== null && powerSaveBlocker.isStarted(wakePowerSaveBlockerId)) {
+      powerSaveBlocker.stop(wakePowerSaveBlockerId);
+    }
+    wakePowerSaveBlockerId = null;
+    pendingWakeConfig = { enabled: false };
+    wakeStatus = {
+      state: keywords ? "disabled" : "setup-required",
+      detail: keywords ? "Sprachaktivierung ist ausgeschaltet" : "Persönliche Sprachbefehle noch nicht eingerichtet",
+    };
+    if (wakeReady && !wakeWin?.isDestroyed()) wakeWin.webContents.send("wake-configure", pendingWakeConfig);
+    updateTray();
+    return;
+  }
+
+  if (wakePowerSaveBlockerId === null || !powerSaveBlocker.isStarted(wakePowerSaveBlockerId)) {
+    wakePowerSaveBlockerId = powerSaveBlocker.start("prevent-app-suspension");
+  }
+  if (IS_MAC) {
+    const microphoneStatus = systemPreferences.getMediaAccessStatus("microphone");
+    logError("Mikrofonstatus für Sprachaktivierung", microphoneStatus);
+    if (microphoneStatus !== "granted") {
+      const granted = await systemPreferences.askForMediaAccess("microphone");
+      if (!granted) {
+        wakeStatus = { state: "error", detail: "Mikrofonzugriff für Klartext erlauben" };
+        updateTray();
+        return;
+      }
+    }
+  }
+  wakeStatus = { state: "preparing", detail: "Hey Klartext wird vorbereitet …" };
+  updateTray();
+  let wasmBase64;
+  try {
+    const wasm = await fs.promises.readFile(path.join(__dirname, "rustpotter-runtime.wasm"));
+    wasmBase64 = wasm.toString("base64");
+  } catch (error) {
+    wakeStatus = { state: "error", detail: "Lokale Spracherkennung fehlt" };
+    logError("Rustpotter-WASM konnte nicht gelesen werden", error);
+    updateTray();
+    return;
+  }
+  if (generation !== wakeGeneration) return;
+  pendingWakeConfig = { enabled: true, keywords, wasmBase64 };
+  createWakeWindow();
+  if (wakeReady) wakeWin.webContents.send("wake-configure", pendingWakeConfig);
+}
+
+ipcMain.handle("save-wake-models", async (event, models) => {
+  if (event.sender !== wakeSetupWin?.webContents) return { ok: false, error: "Ungültiges Fenster" };
+  try {
+    await saveEnrolledWakeModels({ fsPromises: fs.promises, modelDir: wakeModelDir(), models });
+    wakeModelsAvailable = true;
+    settings.voiceActivation = true;
+    saveSettings(settings);
+    await refreshWakeActivation();
+    setTimeout(() => wakeSetupWin?.close(), 650);
+    return { ok: true };
+  } catch (error) {
+    logError("Persönliche Sprachbefehle konnten nicht gespeichert werden", error);
+    return { ok: false, error: String(error?.message || error).slice(0, 180) };
+  }
+});
+
+ipcMain.on("close-wake-setup", (event) => {
+  if (event.sender === wakeSetupWin?.webContents) wakeSetupWin.close();
+});
+
+ipcMain.on("wake-ready", (event) => {
+  if (event.sender !== wakeWin?.webContents) return;
+  wakeReady = true;
+  wakeReloadAttempts = 0;
+  clearTimeout(wakeReadyTimer);
+  wakeReadyTimer = null;
+  logError("Sprachlistener-Fenster ist bereit");
+  if (pendingWakeConfig) wakeWin.webContents.send("wake-configure", pendingWakeConfig);
+});
+
+ipcMain.on("wake-status", (event, value) => {
+  if (event.sender !== wakeWin?.webContents) return;
+  wakeStatus = {
+    state: value?.state || "error",
+    detail: String(value?.detail || "Unbekannter Status").slice(0, 180),
+  };
+  logError(`Sprachaktivierung: ${wakeStatus.state}`, wakeStatus.detail);
+  updateTray();
+});
+
+ipcMain.on("wake-detected", (event, value) => {
+  if (event.sender !== wakeWin?.webContents || !settings.voiceActivation) return;
+  const action = typeof value === "string" ? value : value?.action;
+  const details = typeof value === "object" ? value?.details : null;
+  const score = Number.isFinite(details?.score) ? `; Score: ${details.score.toFixed(3)}` : "";
+  logError("Sprachbefehl erkannt", `${action}; Aufnahme aktiv: ${recording}${score}`);
+  if (action === "start") startRecording("voice");
+  else if (action === "stop") stopRecording("wake-command");
+  else if (action === "silence") stopRecording("silence");
+});
+
 ipcMain.on("pill-error", (_e, message) => {
   if (_e.sender !== pill?.webContents) return;
   logError("Aufnahmefehler", message);
   pill?.hide();
   recording = false;
   processing = false;
+  setWakeRecordingState(false);
   globalShortcut.unregister("Escape");
   updateTray();
   if (Notification.isSupported()) {
@@ -510,7 +785,7 @@ function updateTray() {
       ...(settings.mode === "local" ? [{ label: "Lokales Modell", submenu: modelItems, enabled: !recording && !processing }] : []),
       { type: "separator" },
       {
-        label: getOpenAIKey()
+        label: settings.openaiKeyEnc
           ? "Beste Qualität: bereit ✓"
           : "Beste Qualität: API-Key fehlt",
         enabled: false,
@@ -523,8 +798,65 @@ function updateTray() {
               enabled: !recording && !processing,
               click: () => {
                 settings.openaiKeyEnc = null;
+                cachedOpenAIKey = null;
+                openAIKeyCacheReady = false;
                 saveSettings(settings);
                 updateTray();
+              },
+            },
+          ]
+        : []),
+      { type: "separator" },
+      {
+        label: "Sprachaktivierung: „Hey Klartext“",
+        type: "checkbox",
+        checked: Boolean(settings.voiceActivation && wakeModelsAvailable),
+        enabled: !recording && !processing,
+        click: (item) => {
+          if (item.checked && !wakeModelsAvailable) {
+            settings.voiceActivation = false;
+            saveSettings(settings);
+            openWakeSetupWindow();
+            updateTray();
+            return;
+          }
+          settings.voiceActivation = item.checked;
+          saveSettings(settings);
+          updateTray();
+          refreshWakeActivation();
+        },
+      },
+      {
+        label: settings.voiceActivation && wakeModelsAvailable
+          ? wakeStatus.detail
+          : wakeModelsAvailable ? "Sprachaktivierung ist ausgeschaltet" : "Persönliche Sprachbefehle fehlen",
+        enabled: false,
+      },
+      {
+        label: "Ende: „Klartext fertig“ oder 9 Sekunden Stille",
+        enabled: false,
+      },
+      {
+        label: wakeModelsAvailable ? "Sprachbefehle neu einlernen …" : "Sprachbefehle einrichten …",
+        enabled: !recording && !processing,
+        click: openWakeSetupWindow,
+      },
+      ...(wakeModelsAvailable
+        ? [
+            {
+              label: "Persönliche Sprachmodelle entfernen",
+              enabled: !recording && !processing,
+              click: async () => {
+                try {
+                  await removeEnrolledWakeModels({ fsPromises: fs.promises, modelDir: wakeModelDir() });
+                  wakeModelsAvailable = false;
+                  settings.voiceActivation = false;
+                  saveSettings(settings);
+                  updateTray();
+                  await refreshWakeActivation();
+                } catch (error) {
+                  logError("Persönliche Sprachmodelle konnten nicht entfernt werden", error);
+                }
               },
             },
           ]
@@ -612,7 +944,24 @@ function quitApp() {
     /* egal */
   }
   try {
+    wakeSetupWin?.destroy();
+  } catch {
+    /* egal */
+  }
+  try {
+    wakeWin?.destroy();
+  } catch {
+    /* egal */
+  }
+  try {
     tray?.destroy();
+  } catch {
+    /* egal */
+  }
+  try {
+    if (wakePowerSaveBlockerId !== null && powerSaveBlocker.isStarted(wakePowerSaveBlockerId)) {
+      powerSaveBlocker.stop(wakePowerSaveBlockerId);
+    }
   } catch {
     /* egal */
   }
@@ -627,6 +976,7 @@ app.whenReady().then(async () => {
     return;
   }
   settings = loadSettings();
+  logError("Klartext-App gestartet", `Version ${app.getVersion()}`);
   if (!SMOKE_TEST) {
     loginState = configureLogin(app, settings, process.platform, process.execPath);
     saveSettings(settings);
@@ -653,6 +1003,12 @@ app.whenReady().then(async () => {
     setTimeout(() => { logError("SMOKE_TIMEOUT"); quitApp(); }, 15_000).unref();
     return;
   }
+  try {
+    await refreshWakeActivation();
+  } catch (error) {
+    logError("Sprachaktivierung konnte beim App-Start nicht vorbereitet werden", error);
+  }
+  if (SETUP_VOICE) openWakeSetupWindow();
 });
 
 app.on("window-all-closed", (e) => {

@@ -1,13 +1,17 @@
 {
   "name": "klartext-desktop",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "private": true,
   "description": "Klartext Desktop – systemweites Diktat per globalem Shortcut, Text landet direkt an der Cursor-Position",
   "main": "main.js",
   "scripts": {
+    "bundle:wake": "node build-wake.js",
+    "prestart": "npm run bundle:wake",
     "start": "electron .",
     "icon": "node make-icon.js",
+    "predist": "npm run bundle:wake",
     "dist": "electron-builder --mac dmg",
+    "predist:win": "npm run bundle:wake",
     "dist:win": "electron-builder --win nsis --x64"
   },
   "build": {
@@ -22,6 +26,18 @@
       "runtime.js",
       "audio-runtime.js",
       "accessibility.js",
+      "wake-controller.js",
+      "wake-runtime.js",
+      "wake-preload.js",
+      "wake-bundle.js",
+      "wakesetup-bundle.js",
+      "wake.html",
+      "wakekey.html",
+      "rustpotter-worker.js",
+      "rustpotter-worklet.js",
+      "rustpotter-runtime.wasm",
+      "rustpotter-creator.wasm",
+      "rustpotter-LICENSE.txt",
       "startup.js",
       "preload.js",
       "pill.html",
@@ -67,6 +83,9 @@
   },
   "devDependencies": {
     "electron": "^43.1.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.9",
+    "rustpotter-web": "3.0.2",
+    "rustpotter-worklet": "3.0.3"
   }
 }

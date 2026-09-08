@@ -1,6 +1,6 @@
 # Klartext Status
 
-Stand: 1. September 2026
+Stand: 8. September 2026
 
 ## Produktziel
 
@@ -10,6 +10,20 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Aktueller Stand
 
+- Desktop 0.2.0 unterstützt eine vollständig lokale, persönlich eingelernte
+  Sprachaktivierung mit „Hey Klartext“ und „Klartext fertig“. Die Modelle bleiben
+  lokal im Benutzerprofil; der Listener verursacht keine API-Kosten. Nach neun
+  Sekunden Stille wird eine Aufnahme ebenfalls automatisch beendet.
+- Das Wake-Word-Fenster arbeitet dauerhaft im Hintergrund, bleibt aber
+  nicht fokussierbar. Dadurch behält das zuvor aktive Textfeld seinen Cursor und
+  der fertige Text wird automatisch an derselben Position eingefügt. Der
+  reservierte Endbefehl wird nur am Textende entfernt.
+- Der Sprachstart wartet nicht mehr auf Schlüsselbund- oder bereits erteilte
+  Mikrofonfreigaben. Im realen Mac-Test erschien die Aufnahme 0,26 Sekunden nach
+  der Erkennung. Start und Ende wurden erkannt, der Text automatisch eingefügt
+  und „Klartext fertig“ aus dem Ergebnis entfernt.
+- Der Rustpotter-Listener lädt WASM und persönliche Modelle ohne Worker oder
+  Dateisystem-Fetch. Das behebt sporadische Hänger beim normalen App-Start.
 - Desktop 0.1.4 verhindert, dass eine veraltete macOS-Bedienungshilfe-Freigabe
   Aufnahme und Transkription blockiert. Beim Aufnahme-Start wird nur noch das
   Mikrofon angefragt. Fehlt die Freigabe fürs automatische Einfügen, wird der
@@ -61,14 +75,16 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Verifiziert in diesem Stand
 
-- 42 automatisierte Regressionstests grün, darunter getrennte Entwicklungsprofile
+- 52 automatisierte Regressionstests grün, darunter getrennte Entwicklungsprofile
   und Shortcuts, EPIPE-Behandlung, fehlertolerantes Dateilogging, Aktivierung und
   Fehler eines pausierten AudioContext, die nicht blockierende macOS-
   Bedienungshilfenlogik sowie Recorder-Ausfall ohne stillen
   Browser-Fallback, späte Stop-Daten, leeres Audio, Timeout, Mikrofonverweigerung,
   Retry ohne zusätzliche Audioanfrage beim Feinschliff sowie sechsminütiges Stereo-PCM,
   vollständige Chunk-Abdeckung, Upload-Routing, Teilfehler, Feinschliff-Grenzen,
-  Wörterbuch und plattformübergreifende Autostart-Logik (OS-API gemockt).
+  Wörterbuch und plattformübergreifende Autostart-Logik (OS-API gemockt),
+  Wake-Word-Zustände, unterschiedliche Start-/Stop-Empfindlichkeit, sichere
+  Modellablage, Endbefehlsbereinigung und Stille-Autostopp.
 - Web-Produktionsbuild und TypeScript-Prüfung grün.
 - Web-UI im lokalen Produktionsbuild geprüft: fehlender Key blockiert den Start,
   öffnet Einstellungen und bleibt anschließend als dauerhafter Hinweis sichtbar.
@@ -77,9 +93,10 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
   Schließen des Tabs ohne Transkriptionsanfrage abgebrochen.
 - Electron-Smoke-Test des gepackten Mac-Programms bis zum geladenen Renderer grün,
   mit isoliertem temporären Profil und ohne Aufnahme, API oder Autostart.
-- Zusätzlicher Startversuch des Mac-Pakets wartete auf eine Schlüsselbundfreigabe
-  für die neu signierte App und wurde beendet. Paket-Signaturprüfung ist grün;
-  tatsächlicher Erststart mit Freigabe bleibt ein manueller Abnahmepunkt.
+- Mac 0.2.0 real verifiziert: lokaler Listener wird beim normalen Start bereit,
+  „Hey Klartext“ und „Klartext fertig“ funktionieren, die Sprachblase erhält
+  den Textfeldfokus, automatisches Einfügen funktioniert und der Endbefehl wird
+  entfernt. Mikrofon- und Bedienungshilfenfreigabe wurden erneuert.
 - Synthetische WAV: 199,26 Sekunden, 38.257.554 Bytes. Echter OpenAI-Upload im
   Browser erfolgreich, 394 Wörter, alle sechs Kontrollbegriffe, Anfang/Ende
   vorhanden. Bereichswechsel während der Verarbeitung erfolgreich.
@@ -87,23 +104,23 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 - MP3-Direktupload derselben Aufnahme (2.392.129 Bytes) erfolgreich, 395 Wörter,
   sechs Kontrollbegriffe jeweils einmal. Eine zusätzliche Wortwiederholung zeigt,
   dass dies kein Nachweis fehlerfreier Erkennung ist.
-- Mac- und Windows-Installer 0.1.4 gebaut. Paketinhalt beider Plattformen enthält
-  Runtime-, Audio-, Logging- und Bedienungshilfen-Fix sowie die unveränderten Qualitätsmodelle.
+- Mac- und Windows-Installer 0.2.0 gebaut. Paketinhalt beider Plattformen enthält
+  Runtime-, Audio-, Logging-, Bedienungshilfen- und Sprachaktivierungs-Code sowie
+  die unveränderten Qualitätsmodelle.
   Mac-Signaturprüfung grün. Prüfsummen in desktop/RELEASE_CHECKSUMS.md.
-- Das gepackte Mac-Programm 0.1.4 startet im isolierten Smoke-Test bis zum
+- Das gepackte Mac-Programm 0.2.0 startet im isolierten Smoke-Test bis zum
   geladenen Renderer ohne Mikrofon-, Bedienungshilfen- oder Autostart-Abfrage.
-- Die lokale Installation wurde auf 0.1.4 aktualisiert und gegen den gebauten
+- Die lokale Installation wurde auf 0.2.0 aktualisiert und gegen den gebauten
   Paketinhalt geprüft. Genau eine Produktionsinstanz läuft; Qualitätsmodus,
   gespeicherter API-Key und Autostart-Einstellung sind erhalten.
 
 ## Noch manuell prüfen
 
-1. Mac 0.1.4 installieren, den alten Klartext-Eintrag unter Bedienungshilfen
-   entfernen, die aktuelle App neu hinzufügen und mit einem kurzen Diktat prüfen.
-   Danach eine Anmeldung neu starten und den Autostart bestätigen.
-2. Windows 0.1.4 installieren und Mikrofon, Diktat, Excel-Einfügen und Autostart
-   erneut prüfen. Bei einem Fehler über das Tray „Diagnoseprotokoll anzeigen“
-   öffnen. Der Build und die gemockten Tests ersetzen diese Abnahme nicht.
+1. Auf dem Mac einmal ab- und wieder anmelden und den Autostart sowie die
+   Sprachaktivierung nach der Anmeldung bestätigen.
+2. Windows 0.2.0 installieren, die beiden Sprachbefehle einlernen und Mikrofon,
+   Diktat, Excel-Einfügen, Stille-Autostopp und Autostart real prüfen. Der
+   plattformübergreifende Build und die gemockten Tests ersetzen diese Abnahme nicht.
 3. Eine echte längere Sprachmemo (M4A/MP3) sowie optional weitere WAVs testen.
 
 ## Bereitstellung
@@ -118,3 +135,5 @@ GitHub-Release v0.1.4 mit beiden Installern veröffentlicht. Die stabilen
 `releases/latest/download`-Adressen leiten auf v0.1.4 weiter.
 Lokale und von GitHub berechnete SHA-256-Prüfsummen sowie Dateigrößen stimmen
 für beide Assets überein.
+Die 0.2.0-Installer sind lokal gebaut und geprüft, aber noch nicht als neues
+GitHub-Release veröffentlicht. Der echte Windows-Test steht vorher noch aus.

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline' 'self'; worker-src 'self' blob:; connect-src 'self'; media-src 'self' blob:;" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; padding: 30px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at 50% -20%, #21372f, #0b0f0d 48%); color: #edf3ef; }
+  .shell { max-width: 540px; margin: 0 auto; }
+  .eyebrow { margin: 0 0 8px; color: #55dac7; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+  h1 { margin: 0; font-size: 25px; line-height: 1.15; letter-spacing: -.04em; }
+  .intro { margin: 9px 0 22px; color: #92a198; font-size: 13px; line-height: 1.55; }
+  .card { padding: 24px; border: 1px solid rgba(237,243,239,.12); border-radius: 22px; background: rgba(17,25,21,.86); box-shadow: 0 20px 60px rgba(0,0,0,.28); }
+  .step { margin: 0 0 8px; color: #718078; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .1em; }
+  #phrase { margin: 0 0 8px; font-size: 28px; font-weight: 760; letter-spacing: -.04em; }
+  #instruction { min-height: 42px; margin: 0; color: #9ba9a1; font-size: 13px; line-height: 1.55; }
+  #progress { display: flex; justify-content: center; gap: 10px; margin: 22px 0; }
+  .dot { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(237,243,239,.12); color: #6f7d75; background: #101613; font-size: 12px; font-weight: 750; }
+  .dot.done { color: #08221d; border-color: #55dac7; background: #55dac7; }
+  .status { min-height: 40px; padding: 11px 13px; border-radius: 12px; color: #9ba9a1; background: rgba(255,255,255,.035); font-size: 12px; line-height: 1.45; text-align: center; }
+  .status.listening { color: #ffd0c1; background: rgba(255,112,67,.1); }
+  .status.success { color: #8ce9d9; background: rgba(45,212,191,.08); }
+  .status.error { color: #ffb19a; background: rgba(255,89,45,.1); }
+  .actions { display: grid; gap: 9px; margin-top: 16px; }
+  button { min-height: 43px; padding: 10px 17px; border: 1px solid rgba(237,243,239,.13); border-radius: 13px; color: #c9d3ce; background: #121916; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: rgba(85,218,199,.48); }
+  button:disabled { cursor: default; opacity: .42; }
+  button.primary { color: #fff; border-color: transparent; background: linear-gradient(180deg, #ff8159, #ee5e36); box-shadow: 0 8px 26px rgba(238,94,54,.2); }
+  .secondary { display: flex; gap: 9px; }
+  .secondary button { flex: 1; background: transparent; }
+  .privacy { margin: 17px 2px 0; color: #68776f; font-size: 11px; line-height: 1.5; text-align: center; }
+</style>
+</head>
+<body>
+  <main class="shell">
+    <p class="eyebrow">Freihändig diktieren</p>
+    <h1>Persönliche Sprachbefehle</h1>
+    <p class="intro">Kein Konto und kein API-Key. Klartext lernt die beiden Befehle einmal direkt auf diesem Gerät.</p>
+    <section class="card">
+      <p class="step">Sprachbefehl einlernen</p>
+      <div id="phrase">„Hey Klartext“</div>
+      <p id="instruction"></p>
+      <div id="progress"></div>
+      <div id="status" class="status">Lokale Spracherkennung wird geladen …</div>
+      <div class="actions">
+        <button id="record" class="primary" disabled>Aufnahme starten</button>
+        <div class="secondary">
+          <button id="retry" disabled>Letzte wiederholen</button>
+          <button id="cancel">Abbrechen</button>
+        </div>
+      </div>
+    </section>
+    <p class="privacy">Die Aufnahmen und daraus erzeugten Sprachmodelle verlassen den Computer nicht. Das eigentliche Diktat nutzt weiterhin den gewählten Klartext-Transkriptionsmodus.</p>
+  </main>
+  <script src="wakesetup-bundle.js"></script>
+</body>
+</html>

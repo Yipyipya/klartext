@@ -387,7 +387,7 @@
     statusEl.textContent = "Text wird geglättet …";
   });
 
-  window.klartext.onStop(async () => {
+  window.klartext.onStop(async (options = {}) => {
     if (!recordingActive) return;
     recordingActive = false;
     clearInterval(liveIv);
@@ -401,16 +401,23 @@
       // Laufenden Live-Durchlauf ausklingen lassen
       while (liveBusy) await new Promise((r) => setTimeout(r, 60));
       if (cancelled) return;
-      if (totalSamples < SAMPLE_RATE * 0.4) {
+      const trimSamples = Math.min(
+        totalSamples,
+        Math.max(0, Math.floor((Number(options.trimTailMs) || 0) * SAMPLE_RATE / 1000))
+      );
+      const usableSamples = totalSamples - trimSamples;
+      if (usableSamples < SAMPLE_RATE * 0.4) {
         window.klartext.result("");
         return;
       }
-      const allPcm = concatPcm(0);
+      const capturedPcm = concatPcm(0);
+      const allPcm = trimSamples ? capturedPcm.subarray(0, usableSamples) : capturedPcm;
       if (currentMode === "quality" && hasOpenAIKey) {
         statusEl.textContent = "Beste Qualität …";
         window.klartext.result({
           text: clean(lastPreviewText.trim(), currentLang),
           audio: encodeWav(allPcm),
+          stopReason: options.reason,
         });
       } else {
         const t = await getTranscriber(currentModelId);
@@ -421,7 +428,7 @@
           task: "transcribe",
         });
         const raw = (Array.isArray(out) ? out.map((o) => o.text).join(" ") : out.text) ?? "";
-        window.klartext.result({ text: clean(raw.trim(), currentLang), audio: null });
+        window.klartext.result({ text: clean(raw.trim(), currentLang), audio: null, stopReason: options.reason });
       }
     } catch (err) {
       window.klartext.error(String(err?.message ?? err));

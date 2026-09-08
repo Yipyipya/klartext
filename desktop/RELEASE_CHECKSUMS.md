@@ -1,18 +1,18 @@
 # Release-Prüfsummen
 
-Build: 1. September 2026, Version 0.1.4
+Build: 8. September 2026, Version 0.2.0
 
 ## macOS Apple Silicon
 
 - Datei: `dist/Klartext-Mac-AppleSilicon.dmg`
-- Größe: 118.182.965 Bytes
-- SHA-256: `718bc659243371437f84dce67e233f0db69f4878eefe9c37e2304a79c4b74095`
+- Größe: 118.757.780 Bytes
+- SHA-256: `0b97b20b3d1e4b34791f7a24bbb77ee333d39868d8e6eb93cc1022244e283d54`
 
 ## Windows x64
 
 - Datei: `dist/Klartext-Windows.exe`
-- Größe: 99.474.197 Bytes
-- SHA-256: `6502da4f8c562c2217ab617c9493e0ec7a4f3b1122832ea199d6407b21e0c9e1`
+- Größe: 99.728.117 Bytes
+- SHA-256: `7a94d17b2a615f4e5b2fa3f85c38e1692007607adf70ed8f79f7983391be28ce`
 
 Beide Pakete enthalten `gpt-transcribe`, den Text-Feinschliff über
 `gpt-5.4-mini`, die `Sigill`-Normalisierung und die aktualisierte
@@ -24,7 +24,11 @@ Version 0.1.4 entkoppelt die macOS-Bedienungshilfe von Aufnahme und Transkriptio
 Eine veraltete Einfüge-Freigabe löst beim Diktat keinen Systemdialog mehr aus;
 der fertige Text wird in diesem Fall kopiert und die App zeigt den nötigen Schritt
 zur erneuten Freigabe an.
+Version 0.2.0 ergänzt lokal eingelernte Sprachbefehle für Start und Ende,
+automatisches Beenden nach neun Sekunden Stille und fokuserhaltendes Einblenden.
+Im realen Mac-Test wurden Start, Ende, Endbefehlsbereinigung und automatisches
+Einfügen bestätigt; der Start erfolgte rund 0,26 Sekunden nach der Erkennung.
 macOS ist ad-hoc signiert, nicht Apple-notarisiert. Windows besitzt kein
 vertrauenswürdiges Herausgeberzertifikat. Der Paketinhalt beider Plattformen und
-der Mac-Smoke-Test sind geprüft. Echter Windows-Laufzeit- und Mikrofontest sowie
-die erneute Mac-Sprachaufnahme mit 0.1.4 bleiben manuell zu prüfen.
+der Mac-Smoke-Test sind geprüft. Der echte Windows-Laufzeit-, Wake-Word- und
+Mikrofontest bleibt manuell zu prüfen.

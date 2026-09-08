@@ -5,10 +5,24 @@ function configureLogin(app, settings, platform, executable, force = false) {
     return { supported: false, enabled: false, detail: "Autostart: zuerst nach Programme verschieben" };
   }
   try {
-    // Eine im Betriebssystem deaktivierte Registrierung nicht bei jedem Start
-    // wieder aktivieren. Nur Ersteinrichtung, Pfadwechsel oder bewusster Klick.
-    if (force || settings.loginConfiguredPath !== executable) {
-      app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin !== false });
+    const desired = settings.launchAtLogin !== false;
+    // macOS kann getLoginItemSettings() beim Start minutenlang synchron
+    // blockieren. Beim normalen Start reicht der von Klartext gespeicherte
+    // Zustand; eine Systemabfrage erfolgt nur nach einem bewussten Umschalten.
+    if (!force) {
+      if (settings.loginConfiguredPath !== executable) {
+        app.setLoginItemSettings({ openAtLogin: desired });
+        settings.loginConfiguredPath = executable;
+      }
+      return {
+        supported: true,
+        enabled: desired,
+        detail: desired ? "Autostart: aktiv" : "Autostart: aus",
+      };
+    }
+
+    app.setLoginItemSettings({ openAtLogin: desired });
+    if (settings.loginConfiguredPath !== executable) {
       settings.loginConfiguredPath = executable;
     }
     const state = app.getLoginItemSettings();
