@@ -3,9 +3,12 @@ const assert = require("node:assert/strict");
 const {
   START_LABEL,
   STOP_LABEL,
-  SILENCE_MS,
-  createSilenceGate,
+  START_CONFIRM_QUIET_MS,
+  STOP_CONFIRM_QUIET_MS,
+  CANDIDATE_TIMEOUT_MS,
+  createCommandGate,
   detectionSensitivity,
+  hasRequiredLeadIn,
   keywordAction,
   stripTrailingStopCommand,
   trimTailMs,
@@ -45,34 +48,49 @@ test("Erkannter Endbefehl wird nur am Textende entfernt", () => {
   );
 });
 
-test("Neun Sekunden ohne erkannte Stimme beenden genau einmal", () => {
-  let now = 1_000;
-  const gate = createSilenceGate({ now: () => now });
-  gate.setRecording(true);
-  now += SILENCE_MS - 1;
-  assert.equal(gate.shouldAutoStop(), false);
-  gate.observe(0.8);
-  now += SILENCE_MS - 1;
-  assert.equal(gate.shouldAutoStop(), false);
-  now += 1;
-  assert.equal(gate.shouldAutoStop(), true);
-  assert.equal(gate.shouldAutoStop(), false);
-});
-
-test("Leise Hintergrundgeräusche verlängern den Stille-Timer nicht", () => {
+test("Start- und Endbefehl brauchen anschließend bestätigte Ruhe", () => {
   let now = 0;
-  const gate = createSilenceGate({ now: () => now, voiceThreshold: 0.55 });
+  const gate = createCommandGate({ now: () => now });
+
+  assert.equal(gate.detect("start", { score: 0.43 }), true);
+  assert.equal(gate.observeQuiet(true), null);
+  now = START_CONFIRM_QUIET_MS;
+  assert.equal(gate.observeQuiet(true).state, "confirmed");
+
   gate.setRecording(true);
-  now = 8_500;
-  gate.observe(0.2);
-  now = 9_000;
-  assert.equal(gate.shouldAutoStop(), true);
+  assert.equal(gate.detect("stop", { score: 0.37 }), true);
+  assert.equal(gate.observeQuiet(true), null);
+  now += STOP_CONFIRM_QUIET_MS;
+  const confirmed = gate.observeQuiet(true);
+  assert.equal(confirmed.action, "stop");
+  assert.equal(confirmed.state, "confirmed");
 });
 
-test("Sprachende und Stille werden vor der Transkription abgeschnitten", () => {
+test("Treffer mitten in fortlaufender Sprache wird verworfen", () => {
+  let now = 0;
+  const gate = createCommandGate({ now: () => now });
+  gate.setRecording(true);
+  gate.detect("stop", { score: 0.41 });
+  now = 200;
+  assert.equal(gate.observeQuiet(true), null);
+  now = 500;
+  assert.equal(gate.observeQuiet(false), null);
+  now = CANDIDATE_TIMEOUT_MS + 1;
+  const rejected = gate.observeQuiet(false);
+  assert.equal(rejected.action, "stop");
+  assert.equal(rejected.state, "rejected");
+});
+
+test("Startbefehl braucht eine Vorpause, Endbefehl nutzt die Ruhe danach", () => {
+  assert.equal(hasRequiredLeadIn("start", 149), false);
+  assert.equal(hasRequiredLeadIn("start", 150), true);
+  assert.equal(hasRequiredLeadIn("stop", 0), true);
+});
+
+test("Automatische Enden schneiden kein mögliches Nutz-Audio ab", () => {
   assert.equal(trimTailMs("manual"), 0);
-  assert.equal(trimTailMs("wake-command"), 2_000);
-  assert.equal(trimTailMs("silence"), 8_000);
+  assert.equal(trimTailMs("wake-command"), 0);
+  assert.equal(trimTailMs("silence"), 0);
 });
 
 test("Persönliche Sprachmodelle werden lokal gespeichert und wieder geladen", async () => {

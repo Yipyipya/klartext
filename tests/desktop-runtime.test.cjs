@@ -4,7 +4,12 @@ const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const path = require("node:path");
 const { configureRuntime, createFileLogger, installPipeGuards } = require("../desktop/runtime");
-const { ensureAudioContextRunning } = require("../desktop/audio-runtime");
+const {
+  DEFAULT_NO_SPEECH_MS,
+  DEFAULT_SILENCE_MS,
+  createSilenceMonitor,
+  ensureAudioContextRunning,
+} = require("../desktop/audio-runtime");
 const { ACCESSIBILITY_SETTINGS_URL, getPasteAccess } = require("../desktop/accessibility");
 
 function mockRuntimeApp(packaged) {
@@ -71,6 +76,29 @@ test("Pausierter AudioContext wird vor der PCM-Aufnahme aktiviert", async () => 
 test("Nicht aktivierbarer AudioContext wird als Aufnahmefehler behandelt", async () => {
   await assert.rejects(ensureAudioContextRunning({ state: "suspended", async resume() {} }), /suspended/);
   await assert.rejects(ensureAudioContextRunning(null), /fehlt/);
+});
+
+test("Stille wird auf dem tatsächlichen Aufnahmestream erst nach Sprache beendet", () => {
+  let now = 0;
+  const monitor = createSilenceMonitor({ now: () => now });
+  monitor.observeRms(0.01);
+  monitor.observeRms(0.01);
+  assert.equal(monitor.hasHeardVoice(), true);
+  now = DEFAULT_SILENCE_MS - 1;
+  assert.equal(monitor.shouldAutoStop(), false);
+  now = DEFAULT_SILENCE_MS;
+  assert.equal(monitor.shouldAutoStop(), true);
+  assert.equal(monitor.shouldAutoStop(), false);
+});
+
+test("Leise Eingabe ohne bestätigte Stimme wird nicht nach neun Sekunden abgeschnitten", () => {
+  let now = 0;
+  const monitor = createSilenceMonitor({ now: () => now });
+  monitor.observeRms(0.0005);
+  now = DEFAULT_SILENCE_MS;
+  assert.equal(monitor.shouldAutoStop(), false);
+  now = DEFAULT_NO_SPEECH_MS;
+  assert.equal(monitor.shouldAutoStop(), true);
 });
 
 test("Fehlende macOS-Bedienungshilfe blockiert nur das automatische Einfügen", () => {

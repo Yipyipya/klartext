@@ -179,6 +179,7 @@
   let stream = null, actx = null, procNode = null;
   let pcmChunks = [];        // Float32Array-Stücke mit 16 kHz mono
   let totalSamples = 0;
+  let silenceMonitor = null;
   let recordingActive = false, cancelled = false, currentLang = "de";
   let currentMode = "quality", hasOpenAIKey = false, lastPreviewText = "";
   let startedAt = 0, timerIv = 0, raf = 0, liveIv = 0, liveBusy = false;
@@ -314,6 +315,7 @@
     recordingActive = true;
     pcmChunks = [];
     totalSamples = 0;
+    silenceMonitor = window.KlartextAudioRuntime.createSilenceMonitor();
     currentLang = settings?.lang ?? "de";
     currentMode = settings?.mode ?? "quality";
     hasOpenAIKey = Boolean(settings?.hasOpenAIKey);
@@ -353,6 +355,10 @@
         const c = new Float32Array(e.inputBuffer.getChannelData(0));
         pcmChunks.push(c);
         totalSamples += c.length;
+        let energy = 0;
+        for (let index = 0; index < c.length; index += 1) energy += c[index] * c[index];
+        silenceMonitor?.observeRms(Math.sqrt(energy / Math.max(1, c.length)));
+        if (silenceMonitor?.shouldAutoStop()) window.klartext.silence();
       };
       const mute = actx.createGain();
       mute.gain.value = 0;
@@ -435,6 +441,7 @@
     } finally {
       pcmChunks = [];
       totalSamples = 0;
+      silenceMonitor = null;
       resetUI();
     }
   });
@@ -446,6 +453,7 @@
     stopCapture();
     pcmChunks = [];
     totalSamples = 0;
+    silenceMonitor = null;
     resetUI();
   });
   window.klartext.ready();

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("klartext", {
   onProcessingStart: (cb) => ipcRenderer.on("processing-start", () => cb()),
   onRefiningStart: (cb) => ipcRenderer.on("refining-start", () => cb()),
   result: (payload) => ipcRenderer.send("result", payload),
+  silence: () => ipcRenderer.send("recording-silence"),
   error: (message) => ipcRenderer.send("pill-error", message),
   saveApiKey: (key) => ipcRenderer.send("save-api-key", key),
   closeKeyWindow: () => ipcRenderer.send("close-key-window"),

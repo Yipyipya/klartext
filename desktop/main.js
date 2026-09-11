@@ -677,6 +677,20 @@ ipcMain.on("wake-detected", (event, value) => {
   else if (action === "silence") stopRecording("silence");
 });
 
+ipcMain.on("wake-candidate", (event, value) => {
+  if (event.sender !== wakeWin?.webContents || !settings.voiceActivation) return;
+  const action = value?.action === "stop" ? "stop" : "start";
+  const state = ["detected", "confirmed", "rejected"].includes(value?.state) ? value.state : "unknown";
+  const score = Number.isFinite(value?.details?.score) ? `; Score: ${value.details.score.toFixed(3)}` : "";
+  logError("Sprachbefehl-Kandidat", `${action}; ${state}${score}`);
+});
+
+ipcMain.on("recording-silence", (event) => {
+  if (event.sender !== pill?.webContents || !recording) return;
+  logError("Aufnahmeende durch bestätigte Stille");
+  stopRecording("silence");
+});
+
 ipcMain.on("pill-error", (_e, message) => {
   if (_e.sender !== pill?.webContents) return;
   logError("Aufnahmefehler", message);
@@ -833,7 +847,7 @@ function updateTray() {
         enabled: false,
       },
       {
-        label: "Ende: „Klartext fertig“ oder 9 Sekunden Stille",
+        label: "Ende: kurz pausieren, dann „Klartext fertig“ oder 9 Sekunden Stille",
         enabled: false,
       },
       {

@@ -6,7 +6,7 @@ import rustpotterInit, {
   VADMode,
 } from "rustpotter-web-slim";
 
-const controller = window.KlartextWakeController.createSilenceGate();
+const commandGate = window.KlartextWakeController.createCommandGate();
 let detector = null;
 let audioContext = null;
 let mediaStream = null;
@@ -14,11 +14,14 @@ let sourceNode = null;
 let processorNode = null;
 let analyserNode = null;
 let silentGainNode = null;
-let silenceTimer = null;
+let confirmationTimer = null;
 let generation = 0;
 let noiseFloor = 0.004;
 let frameBuffer = new Float32Array(0);
 let wasmReadyPromise = null;
+let currentlyQuiet = true;
+let quietStartedAt = Date.now();
+let quietBeforeCurrentSpeechMs = Number.POSITIVE_INFINITY;
 
 function describeError(error) {
   const message = String(error?.message || error || "Unbekannter Wake-Word-Fehler");
@@ -102,9 +105,15 @@ function handleDetection(value) {
       : detection.name === "stop"
         ? window.KlartextWakeController.STOP_LABEL
         : detection.name,
-    controller.isRecording()
+    commandGate.isRecording()
   );
-  if (action !== "ignore") window.klartextWake.detected(action, detection);
+  if (action !== "ignore" && !window.KlartextWakeController.hasRequiredLeadIn(action, quietBeforeCurrentSpeechMs)) {
+    window.klartextWake.candidate(action, "rejected", detection);
+    return;
+  }
+  if (action !== "ignore" && commandGate.detect(action, detection)) {
+    window.klartextWake.candidate(action, "detected", detection);
+  }
 }
 
 function processAudio(input) {
@@ -121,7 +130,7 @@ function processAudio(input) {
   frameBuffer = combined.slice(offset);
 }
 
-function observeVoiceLevel() {
+function observeCommandConfirmation() {
   if (!analyserNode) return;
   const samples = new Float32Array(analyserNode.fftSize);
   analyserNode.getFloatTimeDomainData(samples);
@@ -129,22 +138,32 @@ function observeVoiceLevel() {
   for (const sample of samples) energy += sample * sample;
   const rms = Math.sqrt(energy / samples.length);
 
-  if (!controller.isRecording()) {
-    if (rms < 0.03) {
-      const weight = rms < noiseFloor ? 0.08 : 0.01;
-      noiseFloor = Math.max(0.0015, noiseFloor * (1 - weight) + rms * weight);
-    }
-    return;
+  if (rms < 0.03) {
+    const weight = rms < noiseFloor ? 0.08 : 0.01;
+    noiseFloor = Math.max(0.0015, noiseFloor * (1 - weight) + rms * weight);
   }
-
-  const speechThreshold = Math.max(0.007, noiseFloor * 2.4);
-  controller.observe(rms >= speechThreshold ? 1 : 0);
+  const quietThreshold = Math.min(0.03, Math.max(0.006, noiseFloor * 1.8));
+  const quiet = rms < quietThreshold;
+  const currentTime = Date.now();
+  if (quiet && !currentlyQuiet) {
+    currentlyQuiet = true;
+    quietStartedAt = currentTime;
+  } else if (!quiet && currentlyQuiet) {
+    currentlyQuiet = false;
+    quietBeforeCurrentSpeechMs = currentTime - quietStartedAt;
+  }
+  const result = commandGate.observeQuiet(quiet);
+  if (!result) return;
+  window.klartextWake.candidate(result.action, result.state, result.details);
+  if (result.state === "confirmed") {
+    window.klartextWake.detected(result.action, result.details);
+  }
 }
 
 async function stopListening() {
-  clearInterval(silenceTimer);
-  silenceTimer = null;
-  controller.setRecording(false);
+  clearInterval(confirmationTimer);
+  confirmationTimer = null;
+  commandGate.setRecording(false);
   try { sourceNode?.disconnect(); } catch { /* bereits getrennt */ }
   try { processorNode?.disconnect(); } catch { /* bereits getrennt */ }
   try { analyserNode?.disconnect(); } catch { /* bereits getrennt */ }
@@ -227,10 +246,10 @@ async function configure(config) {
     silentGainNode = nextSilentGain;
     frameBuffer = new Float32Array(0);
     noiseFloor = 0.004;
-    silenceTimer = setInterval(() => {
-      observeVoiceLevel();
-      if (controller.shouldAutoStop()) window.klartextWake.detected("silence");
-    }, 100);
+    currentlyQuiet = true;
+    quietStartedAt = Date.now();
+    quietBeforeCurrentSpeechMs = Number.POSITIVE_INFINITY;
+    confirmationTimer = setInterval(observeCommandConfirmation, 50);
     window.klartextWake.status("ready", "Bereit für „Hey Klartext“");
   } catch (error) {
     if (currentGeneration !== generation) return;
@@ -242,7 +261,7 @@ async function configure(config) {
 
 window.klartextWake.onConfigure(configure);
 window.klartextWake.onRecordingState((active) => {
-  controller.setRecording(active);
+  commandGate.setRecording(active);
   try {
     updateSensitivity(active);
   } catch (error) {

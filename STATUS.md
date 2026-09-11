@@ -1,6 +1,6 @@
 # Klartext Status
 
-Stand: 8. September 2026
+Stand: 11. September 2026
 
 ## Produktziel
 
@@ -10,18 +10,27 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Aktueller Stand
 
-- Desktop 0.2.0 unterstützt eine vollständig lokale, persönlich eingelernte
+- Desktop 0.2.1 unterstützt eine vollständig lokale, persönlich eingelernte
   Sprachaktivierung mit „Hey Klartext“ und „Klartext fertig“. Die Modelle bleiben
-  lokal im Benutzerprofil; der Listener verursacht keine API-Kosten. Nach neun
-  Sekunden Stille wird eine Aufnahme ebenfalls automatisch beendet.
+  lokal im Benutzerprofil; der Listener verursacht keine API-Kosten. Erkannte
+  Befehle werden erst nach einer kurzen Ruhephase bestätigt. Dadurch bleibt
+  „Klartext fertig“ mitten im Satz Teil des Diktats, beendet die Aufnahme am
+  tatsächlichen Textende aber zuverlässig.
+- Der Stille-Autostopp misst ab 0.2.1 den tatsächlichen Diktat-Audiostream statt
+  den Wake-Word-Listener. Nach bestätigter Sprache beendet er bei neun Sekunden
+  Stille; ohne erkannte Sprache wartet er 20 Sekunden. Automatische Enden löschen
+  kein Audio mehr. Damit werden leise Passagen und die letzten acht Sekunden
+  längerer Aufnahmen nicht mehr versehentlich abgeschnitten.
 - Das Wake-Word-Fenster arbeitet dauerhaft im Hintergrund, bleibt aber
   nicht fokussierbar. Dadurch behält das zuvor aktive Textfeld seinen Cursor und
   der fertige Text wird automatisch an derselben Position eingefügt. Der
   reservierte Endbefehl wird nur am Textende entfernt.
 - Der Sprachstart wartet nicht mehr auf Schlüsselbund- oder bereits erteilte
-  Mikrofonfreigaben. Im realen Mac-Test erschien die Aufnahme 0,26 Sekunden nach
-  der Erkennung. Start und Ende wurden erkannt, der Text automatisch eingefügt
-  und „Klartext fertig“ aus dem Ergebnis entfernt.
+  Mikrofonfreigaben. In 0.2.0 erschien die Aufnahme im realen Mac-Test 0,26
+  Sekunden nach der Erkennung. In 0.2.1 benötigten Start und Ende inklusive der neuen
+  Bestätigung jeweils rund 0,58 Sekunden ab erkanntem Kandidaten. Start und Ende
+  wurden erkannt, der Text automatisch eingefügt und der abschließende Befehl
+  entfernt; dieselben Wörter mitten im Satz blieben korrekt erhalten.
 - Der Rustpotter-Listener lädt WASM und persönliche Modelle ohne Worker oder
   Dateisystem-Fetch. Das behebt sporadische Hänger beim normalen App-Start.
 - Desktop 0.1.4 verhindert, dass eine veraltete macOS-Bedienungshilfe-Freigabe
@@ -75,7 +84,7 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Verifiziert in diesem Stand
 
-- 52 automatisierte Regressionstests grün, darunter getrennte Entwicklungsprofile
+- 55 automatisierte Regressionstests grün, darunter getrennte Entwicklungsprofile
   und Shortcuts, EPIPE-Behandlung, fehlertolerantes Dateilogging, Aktivierung und
   Fehler eines pausierten AudioContext, die nicht blockierende macOS-
   Bedienungshilfenlogik sowie Recorder-Ausfall ohne stillen
@@ -84,7 +93,8 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
   vollständige Chunk-Abdeckung, Upload-Routing, Teilfehler, Feinschliff-Grenzen,
   Wörterbuch und plattformübergreifende Autostart-Logik (OS-API gemockt),
   Wake-Word-Zustände, unterschiedliche Start-/Stop-Empfindlichkeit, sichere
-  Modellablage, Endbefehlsbereinigung und Stille-Autostopp.
+  Modellablage, kontextabhängige Befehlsbestätigung, Endbefehlsbereinigung und
+  Stille-Autostopp auf dem tatsächlichen Aufnahmestream.
 - Web-Produktionsbuild und TypeScript-Prüfung grün.
 - Web-UI im lokalen Produktionsbuild geprüft: fehlender Key blockiert den Start,
   öffnet Einstellungen und bleibt anschließend als dauerhafter Hinweis sichtbar.
@@ -93,10 +103,11 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
   Schließen des Tabs ohne Transkriptionsanfrage abgebrochen.
 - Electron-Smoke-Test des gepackten Mac-Programms bis zum geladenen Renderer grün,
   mit isoliertem temporären Profil und ohne Aufnahme, API oder Autostart.
-- Mac 0.2.0 real verifiziert: lokaler Listener wird beim normalen Start bereit,
+- Mac 0.2.1 real verifiziert: lokaler Listener wird beim normalen Start bereit,
   „Hey Klartext“ und „Klartext fertig“ funktionieren, die Sprachblase erhält
   den Textfeldfokus, automatisches Einfügen funktioniert und der Endbefehl wird
-  entfernt. Mikrofon- und Bedienungshilfenfreigabe wurden erneuert.
+  entfernt. Eine Erwähnung von „Klartext fertig“ mitten im laufenden Satz löste
+  keinen Fehlstopp aus. Mikrofon- und Bedienungshilfenfreigabe wurden erneuert.
 - Synthetische WAV: 199,26 Sekunden, 38.257.554 Bytes. Echter OpenAI-Upload im
   Browser erfolgreich, 394 Wörter, alle sechs Kontrollbegriffe, Anfang/Ende
   vorhanden. Bereichswechsel während der Verarbeitung erfolgreich.
@@ -104,21 +115,27 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 - MP3-Direktupload derselben Aufnahme (2.392.129 Bytes) erfolgreich, 395 Wörter,
   sechs Kontrollbegriffe jeweils einmal. Eine zusätzliche Wortwiederholung zeigt,
   dass dies kein Nachweis fehlerfreier Erkennung ist.
-- Mac- und Windows-Installer 0.2.0 gebaut. Paketinhalt beider Plattformen enthält
+- Mac- und Windows-Installer 0.2.1 gebaut. Paketinhalt beider Plattformen enthält
   Runtime-, Audio-, Logging-, Bedienungshilfen- und Sprachaktivierungs-Code sowie
+  die kontextabhängige Befehlsbestätigung, den aufnahmeseitigen Stillemonitor und
   die unveränderten Qualitätsmodelle.
   Mac-Signaturprüfung grün. Prüfsummen in desktop/RELEASE_CHECKSUMS.md.
-- Das gepackte Mac-Programm 0.2.0 startet im isolierten Smoke-Test bis zum
+- Das gepackte Mac-Programm 0.2.1 startet im isolierten Smoke-Test bis zum
   geladenen Renderer ohne Mikrofon-, Bedienungshilfen- oder Autostart-Abfrage.
-- Die lokale Installation wurde auf 0.2.0 aktualisiert und gegen den gebauten
+- Die lokale Installation wurde auf 0.2.1 aktualisiert und gegen den gebauten
   Paketinhalt geprüft. Genau eine Produktionsinstanz läuft; Qualitätsmodus,
   gespeicherter API-Key und Autostart-Einstellung sind erhalten.
+- Windows 0.2.0 wurde real geprüft: Diktat, Fokus, automatisches Einfügen und
+  Excel funktionierten. Der Bericht wies überlappende Wahr-/Fehlalarm-Scores,
+  unzuverlässige Endbefehle und verfrühte Stille-Stopps nach. 0.2.1 behebt die
+  zugehörigen festen Schwellen-/Sofortstopp- und Audioabschneidepfade; der echte
+  Windows-Laufzeittest des neuen Builds bleibt erforderlich.
 
 ## Noch manuell prüfen
 
 1. Auf dem Mac einmal ab- und wieder anmelden und den Autostart sowie die
    Sprachaktivierung nach der Anmeldung bestätigen.
-2. Windows 0.2.0 installieren, die beiden Sprachbefehle einlernen und Mikrofon,
+2. Windows 0.2.1 installieren, die vorhandenen Sprachmodelle verwenden und Mikrofon,
    Diktat, Excel-Einfügen, Stille-Autostopp und Autostart real prüfen. Der
    plattformübergreifende Build und die gemockten Tests ersetzen diese Abnahme nicht.
 3. Eine echte längere Sprachmemo (M4A/MP3) sowie optional weitere WAVs testen.
@@ -131,9 +148,9 @@ Safari-Fix e855ded209f78086d1b85121f428930251fbfd51 auf main übernommen.
 Vercel-Produktion erfolgreich (Deployment 6119223758); normale Adresse im Browser
 mit neuem Diktat-Editor geprüft. Der echte Safari-Sprachtest bleibt offen.
 noindex und Downloadlinks wurden beim vorherigen Release bestätigt.
-GitHub-Release v0.2.0 mit beiden Installern veröffentlicht. Die stabilen
-`releases/latest/download`-Adressen der Website leiten auf v0.2.0 weiter.
+GitHub-Release v0.2.1 mit beiden Installern veröffentlicht. Die stabilen
+`releases/latest/download`-Adressen der Website leiten auf v0.2.1 weiter.
 Lokale und von GitHub berechnete SHA-256-Prüfsummen sowie Dateigrößen stimmen
 für beide Assets überein. Die Produktionswebsite antwortet mit HTTP 200; der
-Windows-Download wurde bis zum 99.728.117 Byte großen Release-Asset verifiziert.
-Der echte Windows-Test steht noch aus.
+Windows-Download wurde bis zum 99.729.458 Byte großen Release-Asset verifiziert.
+Der echte Windows-0.2.1-Laufzeittest steht noch aus.
