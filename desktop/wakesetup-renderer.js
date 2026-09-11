@@ -2,7 +2,6 @@ import rustpotterInit, { WakewordRefCreator } from "rustpotter-web";
 
 const PHRASES = [
   { key: "start", label: "Hey Klartext" },
-  { key: "stop", label: "Klartext fertig" },
 ];
 const SAMPLE_COUNT = 5;
 const RECORD_MS = 2_800;
@@ -34,9 +33,7 @@ function render() {
   const phrase = PHRASES[phaseIndex];
   const count = samplesByPhrase.get(phrase.key).length;
   phraseEl.textContent = `„${phrase.label}“`;
-  instructionEl.textContent = phaseIndex === 0
-    ? "Sprich den Startbefehl fünfmal natürlich ein. Jede Aufnahme wird nur lokal verarbeitet."
-    : "Jetzt noch den optionalen Endbefehl. Danach kann Klartext auch sofort per Stimme abschließen.";
+  instructionEl.textContent = "Sprich den Startbefehl fünfmal natürlich ein. Jede Aufnahme wird nur lokal verarbeitet.";
   progressEl.innerHTML = Array.from({ length: SAMPLE_COUNT }, (_, index) =>
     `<span class="dot ${index < count ? "done" : ""}">${index < count ? "✓" : index + 1}</span>`
   ).join("");
@@ -202,13 +199,7 @@ async function recordSample() {
     setStatus("Aufnahme erkannt.", "success");
     render();
     if (samplesByPhrase.get(phrase.key).length >= SAMPLE_COUNT) {
-      if (phaseIndex < PHRASES.length - 1) {
-        phaseIndex += 1;
-        setStatus("Sehr gut. Jetzt folgt der Endbefehl.");
-        render();
-      } else {
-        await finishSetup();
-      }
+      await finishSetup();
     }
   } catch (error) {
     recording = false;

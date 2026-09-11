@@ -2,8 +2,8 @@ const path = require("path");
 
 const WAKE_MODEL_SPECS = [
   { key: "start", label: "Hey Klartext", fileName: "hey-klartext.rpw" },
-  { key: "stop", label: "Klartext fertig", fileName: "klartext-fertig.rpw" },
 ];
+const LEGACY_WAKE_MODEL_FILES = ["klartext-fertig.rpw"];
 
 const MIN_MODEL_BYTES = 128;
 const MAX_MODEL_BYTES = 5_000_000;
@@ -54,9 +54,10 @@ async function saveEnrolledWakeModels({ fsPromises, modelDir, models }) {
 }
 
 async function removeEnrolledWakeModels({ fsPromises, modelDir }) {
-  await Promise.all(WAKE_MODEL_SPECS.map(async (spec) => {
+  const fileNames = [...WAKE_MODEL_SPECS.map((spec) => spec.fileName), ...LEGACY_WAKE_MODEL_FILES];
+  await Promise.all(fileNames.map(async (fileName) => {
     try {
-      await fsPromises.unlink(path.join(modelDir, spec.fileName));
+      await fsPromises.unlink(path.join(modelDir, fileName));
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }

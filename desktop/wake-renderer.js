@@ -111,13 +111,17 @@ function handleDetection(value) {
     window.klartextWake.candidate(action, "rejected", detection);
     return;
   }
-  if (action !== "ignore" && commandGate.detect(action, detection)) {
-    window.klartextWake.candidate(action, "detected", detection);
+  if (action !== "ignore") {
+    const result = commandGate.detect(action, detection);
+    if (result) window.klartextWake.candidate(result.action, result.state, result.details);
   }
 }
 
 function processAudio(input) {
-  if (!detector) return;
+  // Während eines Diktats ist nur der aufnahmeseitige Stillemonitor aktiv.
+  // Das Wake-Modell dient ausschließlich zum Starten und kann deshalb niemals
+  // normale Diktatwörter als Endbefehl missverstehen.
+  if (!detector || commandGate.isRecording()) return;
   const combined = new Float32Array(frameBuffer.length + input.length);
   combined.set(frameBuffer);
   combined.set(input, frameBuffer.length);
@@ -189,7 +193,7 @@ async function configure(config) {
     return;
   }
 
-  window.klartextWake.status("preparing", "Persönliche Sprachbefehle werden geladen …");
+  window.klartextWake.status("preparing", "Persönlicher Startbefehl wird geladen …");
   try {
     wasmReadyPromise ||= rustpotterInit(decodeBase64(config.wasmBase64));
     await wasmReadyPromise;
@@ -262,6 +266,7 @@ async function configure(config) {
 window.klartextWake.onConfigure(configure);
 window.klartextWake.onRecordingState((active) => {
   commandGate.setRecording(active);
+  frameBuffer = new Float32Array(0);
   try {
     updateSensitivity(active);
   } catch (error) {

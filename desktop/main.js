@@ -464,7 +464,7 @@ ipcMain.on("save-api-key", (_e, key) => {
 
 ipcMain.on("close-key-window", () => keyWin?.close());
 
-/* ---------- Persönliche Sprachbefehle und Hintergrundlistener ---------- */
+/* ---------- Persönlicher Startbefehl und Hintergrundlistener ---------- */
 let wakeSetupWin = null;
 
 const wakeModelDir = () => path.join(app.getPath("userData"), "wake-models");
@@ -477,7 +477,7 @@ function openWakeSetupWindow() {
   wakeGeneration += 1;
   pendingWakeConfig = { enabled: false };
   if (wakeReady && !wakeWin?.isDestroyed()) wakeWin.webContents.send("wake-configure", pendingWakeConfig);
-  wakeStatus = { state: "setup", detail: "Sprachbefehle werden eingerichtet …" };
+  wakeStatus = { state: "setup", detail: "Startbefehl wird eingerichtet …" };
   updateTray();
   wakeSetupWin = new BrowserWindow({
     width: 620,
@@ -586,7 +586,7 @@ async function refreshWakeActivation() {
     pendingWakeConfig = { enabled: false };
     wakeStatus = {
       state: keywords ? "disabled" : "setup-required",
-      detail: keywords ? "Sprachaktivierung ist ausgeschaltet" : "Persönliche Sprachbefehle noch nicht eingerichtet",
+      detail: keywords ? "Sprachaktivierung ist ausgeschaltet" : "Persönlicher Startbefehl noch nicht eingerichtet",
     };
     if (wakeReady && !wakeWin?.isDestroyed()) wakeWin.webContents.send("wake-configure", pendingWakeConfig);
     updateTray();
@@ -637,7 +637,7 @@ ipcMain.handle("save-wake-models", async (event, models) => {
     setTimeout(() => wakeSetupWin?.close(), 650);
     return { ok: true };
   } catch (error) {
-    logError("Persönliche Sprachbefehle konnten nicht gespeichert werden", error);
+    logError("Persönlicher Startbefehl konnte nicht gespeichert werden", error);
     return { ok: false, error: String(error?.message || error).slice(0, 180) };
   }
 });
@@ -673,8 +673,6 @@ ipcMain.on("wake-detected", (event, value) => {
   const score = Number.isFinite(details?.score) ? `; Score: ${details.score.toFixed(3)}` : "";
   logError("Sprachbefehl erkannt", `${action}; Aufnahme aktiv: ${recording}${score}`);
   if (action === "start") startRecording("voice");
-  else if (action === "stop") stopRecording("wake-command");
-  else if (action === "silence") stopRecording("silence");
 });
 
 ipcMain.on("wake-candidate", (event, value) => {
@@ -843,15 +841,15 @@ function updateTray() {
       {
         label: settings.voiceActivation && wakeModelsAvailable
           ? wakeStatus.detail
-          : wakeModelsAvailable ? "Sprachaktivierung ist ausgeschaltet" : "Persönliche Sprachbefehle fehlen",
+          : wakeModelsAvailable ? "Sprachaktivierung ist ausgeschaltet" : "Persönlicher Startbefehl fehlt",
         enabled: false,
       },
       {
-        label: "Ende: kurz pausieren, dann „Klartext fertig“ oder 9 Sekunden Stille",
+        label: `Ende: 9 Sekunden Stille oder ${HOTKEY_LABEL}`,
         enabled: false,
       },
       {
-        label: wakeModelsAvailable ? "Sprachbefehle neu einlernen …" : "Sprachbefehle einrichten …",
+        label: wakeModelsAvailable ? "Startbefehl neu einlernen …" : "Startbefehl einrichten …",
         enabled: !recording && !processing,
         click: openWakeSetupWindow,
       },

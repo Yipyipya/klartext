@@ -4,8 +4,6 @@ const {
   START_LABEL,
   STOP_LABEL,
   START_CONFIRM_QUIET_MS,
-  STOP_CONFIRM_QUIET_MS,
-  CANDIDATE_TIMEOUT_MS,
   createCommandGate,
   detectionSensitivity,
   hasRequiredLeadIn,
@@ -20,21 +18,19 @@ const {
   removeEnrolledWakeModels,
 } = require("../desktop/wake-runtime");
 
-test("Wake Words starten und beenden nur im passenden Zustand", () => {
+test("Nur der Startbefehl löst eine Aktion aus", () => {
   assert.equal(keywordAction(START_LABEL, false), "start");
   assert.equal(keywordAction(START_LABEL, true), "ignore");
-  assert.equal(keywordAction(STOP_LABEL, true), "stop");
+  assert.equal(keywordAction(STOP_LABEL, true), "ignore");
   assert.equal(keywordAction(STOP_LABEL, false), "ignore");
   assert.equal(keywordAction("zufälliger Satz", false), "ignore");
 });
 
-test("Startbefehl bleibt strenger als der Endbefehl", () => {
+test("Während einer Aufnahme wird die Startempfindlichkeit nicht gelockert", () => {
   const idle = detectionSensitivity(false);
   const recording = detectionSensitivity(true);
 
-  assert.ok(idle.minScores >= recording.minScores);
-  assert.ok(idle.threshold > recording.threshold);
-  assert.ok(idle.averagedThreshold > recording.averagedThreshold);
+  assert.deepEqual(recording, idle);
 });
 
 test("Erkannter Endbefehl wird nur am Textende entfernt", () => {
@@ -46,45 +42,34 @@ test("Erkannter Endbefehl wird nur am Textende entfernt", () => {
     stripTrailingStopCommand("Ich erkläre, warum Klartext fertig manchmal schwierig ist."),
     "Ich erkläre, warum Klartext fertig manchmal schwierig ist."
   );
+  assert.equal(
+    stripTrailingStopCommand("Der Text ist fertig. Klartext fertig. Klartext fertig."),
+    "Der Text ist fertig."
+  );
 });
 
-test("Start- und Endbefehl brauchen anschließend bestätigte Ruhe", () => {
+test("Der Startbefehl braucht anschließend bestätigte Ruhe", () => {
   let now = 0;
   const gate = createCommandGate({ now: () => now });
 
-  assert.equal(gate.detect("start", { score: 0.43 }), true);
+  assert.equal(gate.detect("start", { score: 0.43 }).state, "detected");
   assert.equal(gate.observeQuiet(true), null);
   now = START_CONFIRM_QUIET_MS;
   assert.equal(gate.observeQuiet(true).state, "confirmed");
 
-  gate.setRecording(true);
-  assert.equal(gate.detect("stop", { score: 0.37 }), true);
-  assert.equal(gate.observeQuiet(true), null);
-  now += STOP_CONFIRM_QUIET_MS;
-  const confirmed = gate.observeQuiet(true);
-  assert.equal(confirmed.action, "stop");
-  assert.equal(confirmed.state, "confirmed");
 });
 
-test("Treffer mitten in fortlaufender Sprache wird verworfen", () => {
-  let now = 0;
-  const gate = createCommandGate({ now: () => now });
+test("Endtreffer werden auch innerhalb des Gates vollständig ignoriert", () => {
+  const gate = createCommandGate();
   gate.setRecording(true);
-  gate.detect("stop", { score: 0.41 });
-  now = 200;
+  assert.equal(gate.detect("stop", { score: 1 }), null);
   assert.equal(gate.observeQuiet(true), null);
-  now = 500;
-  assert.equal(gate.observeQuiet(false), null);
-  now = CANDIDATE_TIMEOUT_MS + 1;
-  const rejected = gate.observeQuiet(false);
-  assert.equal(rejected.action, "stop");
-  assert.equal(rejected.state, "rejected");
 });
 
-test("Startbefehl braucht eine Vorpause, Endbefehl nutzt die Ruhe danach", () => {
+test("Nur der Startbefehl erfüllt die Vorpause", () => {
   assert.equal(hasRequiredLeadIn("start", 149), false);
   assert.equal(hasRequiredLeadIn("start", 150), true);
-  assert.equal(hasRequiredLeadIn("stop", 0), true);
+  assert.equal(hasRequiredLeadIn("stop", Number.POSITIVE_INFINITY), false);
 });
 
 test("Automatische Enden schneiden kein mögliches Nutz-Audio ab", () => {
@@ -115,7 +100,7 @@ test("Persönliche Sprachmodelle werden lokal gespeichert und wieder geladen", a
   const saved = await saveEnrolledWakeModels({ fsPromises, modelDir: "/models", models: supplied });
   const loaded = await loadEnrolledWakeModels({ fsPromises, modelDir: "/models" });
 
-  assert.equal(writes.length, 2);
+  assert.equal(writes.length, 1);
   assert.equal(writes.every((write) => write.options.mode === 0o600), true);
   assert.deepEqual(loaded, saved);
 });
@@ -132,8 +117,7 @@ test("Fehlende oder ungültige Sprachmodelle aktivieren den Listener nicht", asy
       fsPromises,
       modelDir: "/models",
       models: [
-        { key: "start", base64: Buffer.alloc(2_000).toString("base64") },
-        { key: "stop", base64: "zu-klein" },
+        { key: "start", base64: "zu-klein" },
       ],
     }),
     /Ungültig/
