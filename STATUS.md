@@ -10,11 +10,11 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Aktueller Stand
 
-- Release 0.3.0 vorbereitet: Mac- und Windows-Installer gebaut, alle Paketdateien
+- Release 0.3.0 veröffentlicht: Mac- und Windows-Installer gebaut, alle Paketdateien
   gegen die Quellen geprüft, Mac-Signatur und isolierter Einstellungs-Smoke-Test
   erfolgreich. 57 Tests und finaler Web-Build grün. Prüfsummen stehen in
   `desktop/RELEASE_CHECKSUMS.md`.
-- **Resonanz-Redesign umgesetzt und auf diesem Mac installiert (noch nicht veröffentlicht):**
+- **Resonanz-Redesign veröffentlicht und auf diesem Mac installiert:**
   Web-Sprachraum mit dreiteiligem Aufnahmezeichen, unterscheidbaren Aufnahme- und
   Verarbeitungszuständen, direkt bearbeitbarem Text und kürzerer Zeilenbreite.
   Neue SVG-Icons für Dateien und Verlauf, helle/dunkle Darstellung, neue App-Icons.
@@ -38,8 +38,9 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
   geprüften Resonanz-Build ersetzt; Paketvergleich, Signatur und Start des neuen
   Einstellungsfensters bestätigt. Die vorherige App liegt unter
   `desktop/dist/install-backups/20260912-221540/Klartext.app`. Benutzerprofil und
-  Sprachmodelle wurden nicht ersetzt. Veröffentlichte Downloads sind noch der
-  vorherige Stand. Entwicklungs-Vorschau läuft mit separatem Profil; für
+  Sprachmodelle wurden nicht ersetzt. Die lokale Installation hat noch die
+  Versionsnummer 0.2.2 bei identischem Resonanz-Funktionsstand; die veröffentlichten
+  Installer sind als 0.3.0 gekennzeichnet. Entwicklungs-Vorschau läuft mit separatem Profil; für
   Abnahmen sind `--settings-preview` und `--settings-smoke-test` verfügbar.
 
 - Desktop 0.2.2 unterstützt eine vollständig lokale, persönlich eingelernte
@@ -176,15 +177,19 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Bereitstellung
 
+Resonanz 0.3.0 ist seit 12. September 2026 veröffentlicht.
 Bestehendes Projekt: Yipyipya/klartext, Vercel-Produktionszweig main.
 Adresse: https://klartext-ai.vercel.app
-Safari-Fix e855ded209f78086d1b85121f428930251fbfd51 auf main übernommen.
-Vercel-Produktion erfolgreich (Deployment 6119223758); normale Adresse im Browser
-mit neuem Diktat-Editor geprüft. Der echte Safari-Sprachtest bleibt offen.
-noindex und Downloadlinks wurden beim vorherigen Release bestätigt.
-GitHub-Release v0.2.2 mit beiden Installern veröffentlicht. Die stabilen
-`releases/latest/download`-Adressen der Website leiten auf v0.2.2 weiter.
-Lokale und von GitHub berechnete SHA-256-Prüfsummen sowie Dateigrößen stimmen
-für beide Assets überein. Die Produktionswebsite antwortet mit HTTP 200; der
-Windows-Download wurde bis zum 99.729.064 Byte großen Release-Asset verifiziert.
-Der echte Windows-0.2.2-Laufzeittest steht noch aus.
+Release-Quellstand: cdc5e65f13d8b7bcc2d9aca3fe0e85e038855ff1.
+Vercel-Produktion erfolgreich (Deployment 6414036632); öffentliche Adresse mit
+Resonanz im Browser visuell geprüft und HTTP-Antwort bestätigt.
+
+GitHub-Release: https://github.com/Yipyipya/klartext/releases/tag/v0.3.0
+Mac-Apple-Silicon-DMG, Windows-x64-Installer und SHA256SUMS.txt veröffentlicht.
+GitHub-Dateigrößen und SHA-256 stimmen für alle drei Dateien mit lokalen Werten
+überein. Beide stabilen `releases/latest/download`-Links führen auf v0.3.0 und
+liefern HTTP 200 mit der erwarteten Größe. Das Mac-DMG hat zusätzlich eine
+bestätigte Integritätsprüfung. Die bisherigen Versionen bleiben auf GitHub.
+
+Der echte Windows-0.3.0-Laufzeittest, eine neue Mikrofon-/Cloud-End-to-End-Aufnahme
+für das Redesign sowie der Test nach einer echten Systemanmeldung bleiben offen.
