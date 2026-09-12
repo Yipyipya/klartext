@@ -31,6 +31,10 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const [settingsSection, setSettingsSection] = useState("transkription");
+  const settingsDialog = useRef<HTMLDialogElement>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
   const [dark, setDark] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [lastRaw, setLastRaw] = useState<string | null>(null);
@@ -67,6 +71,13 @@ export default function Home() {
   useEffect(() => {
     if (hydrated) saveSettings(settings);
   }, [settings, hydrated]);
+
+  useEffect(() => {
+    if (showSettings) settingsDialog.current?.showModal();
+    else settingsDialog.current?.close();
+  }, [showSettings]);
+
+  useEffect(() => { if (composing) editor.current?.focus(); }, [composing]);
 
   /* ---------- Helfer ---------- */
   const showToast = useCallback((msg: string) => {
@@ -111,6 +122,7 @@ export default function Home() {
     const s = settingsRef.current;
     if (s.transcriptionMode === "quality" && !s.openaiApiKey.trim()) {
       setNotice({ kind: "error", message: "Für den Qualitätsmodus fehlt dein API-Key. Bitte ergänze ihn in den Einstellungen." });
+      setSettingsSection("transkription");
       setShowSettings(true);
       return;
     }
@@ -238,10 +250,12 @@ export default function Home() {
         (el.tagName === "TEXTAREA" ||
           el.tagName === "INPUT" ||
           el.tagName === "SELECT" ||
+          el.tagName === "BUTTON" ||
           el.isContentEditable)
       );
     };
     const down = (e: KeyboardEvent) => {
+      if (settingsDialog.current?.open) return;
       if (e.code === "Space" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         e.preventDefault();
         toggleDictation();
@@ -298,6 +312,21 @@ export default function Home() {
   const langLabel =
     LANGUAGES.find((l) => l.code === settings.lang)?.label ?? settings.lang;
 
+  const hasDocument = Boolean(d.finalText) || composing;
+  const needsKey = settings.transcriptionMode === "quality" && !settings.openaiApiKey.trim();
+  const captureControl = processing ? (
+    <div className="processing-pill" role="status"><span className="spinner" /><span>{processingLabel}</span></div>
+  ) : d.listening ? (
+    <div className="recording-controls">
+      <span className="recording-label">Aufnahme</span>
+      <Waveform stream={d.stream} className="capture-wave" />
+      <span className="capture-time">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>
+      <button onClick={finishDictation} className="stop-button" aria-label="Aufnahme beenden"><StopIcon /></button>
+    </div>
+  ) : (
+    <button onClick={startDictation} className="capture-button"><LogoBars /><span>{needsKey ? "Diktat einrichten" : hasDocument ? "Weiter diktieren" : "Diktieren"}</span></button>
+  );
+
   return (
     <div className="app-shell min-h-dvh">
       <aside className="desktop-sidebar kt-glass">
@@ -305,7 +334,7 @@ export default function Home() {
           <span className="brand-mark"><LogoBars /></span>
           <div>
             <div className="brand-name">Klartext</div>
-            <div className="brand-caption">Voice workspace</div>
+            <div className="brand-caption">Deine Stimme. Dein Text.</div>
           </div>
         </div>
 
@@ -348,6 +377,7 @@ export default function Home() {
       </aside>
 
       <section className="app-workspace">
+        <div className="workspace-topbar"><span>{({diktat:"Sprachraum",dateien:"Audio importieren",verlauf:"Deine Aufnahmen",desktop:"Überall diktieren"})[tab]}</span>{tab === "diktat" ? <span>Auf diesem Gerät <span className="small-signal" /></span> : captureControl}</div>
         <header className="mobile-header">
           <div className="brand-lockup compact">
             <span className="brand-mark"><LogoBars /></span>
@@ -377,49 +407,40 @@ export default function Home() {
           ))}
         </nav>
 
-        {showSettings && (
-          <div className="settings-layer">
-            <button
-              className="settings-scrim"
-              aria-label="Einstellungen schließen"
-              onClick={() => setShowSettings(false)}
-            />
-            <aside className="settings-drawer" role="dialog" aria-modal="true" aria-label="Einstellungen">
-              <div className="settings-drawer-head">
-                <div>
-                  <p className="eyebrow">Persönlich einrichten</p>
-                  <h2>Einstellungen</h2>
-                </div>
-                <button onClick={() => setShowSettings(false)} className="icon-btn" aria-label="Einstellungen schließen">
-                  <CloseIcon />
-                </button>
-              </div>
-              <SettingsCard settings={settings} setSettings={setSettings} />
-            </aside>
+        {tab !== "diktat" && <div className="mobile-capture">{captureControl}</div>}
+
+        <dialog ref={settingsDialog} className="settings-window" onCancel={() => setShowSettings(false)} onClose={() => setShowSettings(false)} aria-label="Einstellungen">
+          <div className="settings-titlebar"><span className="settings-wordmark"><LogoBars /> Klartext</span><span>Einstellungen</span><button onClick={() => setShowSettings(false)} className="icon-btn" aria-label="Einstellungen schließen"><CloseIcon /></button></div>
+          <div className="settings-layout">
+            <nav className="settings-navigation" aria-label="Einstellungsbereiche">
+              {[["transkription","Transkription"],["sprache","Sprache & Verhalten"],["kontext","Kontext"],["woerterbuch","Wörterbuch"]].map(([id,label]) => <button key={id} aria-current={settingsSection === id ? "page" : undefined} onClick={() => setSettingsSection(id)}>{label}</button>)}
+              <p>Einstellungen werden auf diesem Gerät gespeichert.</p>
+            </nav>
+            <div className="settings-body"><h2>{({transkription:"Aus Stimme wird Text.",sprache:"So arbeitest du.",kontext:"Deine Themen.",woerterbuch:"Deine eigenen Worte."} as Record<string, string>)[settingsSection]}</h2><SettingsCard settings={settings} setSettings={setSettings} section={settingsSection} /></div>
           </div>
-        )}
+        </dialog>
 
         <main className="workspace-content">
         {tab === "diktat" && (
-          <div className="space-y-5">
-            <div className="workspace-heading rise rise-1">
+          <div className={`dictation-workspace ${hasDocument ? "has-document" : ""}`}>
+            <div className="workspace-heading">
               <div>
-                <p className="eyebrow">Neues Diktat</p>
-                <h1>Was möchtest du festhalten?</h1>
-                <p>Sprich frei. Klartext macht daraus einen sauberen, direkt nutzbaren Text.</p>
+                <p className="eyebrow">{hasDocument ? "Dein Text" : "Neues Diktat"}</p>
+                <h1>{hasDocument ? "Zum Weiterdenken." : "Dein Gedanke beginnt hier."}</h1>
+                {!hasDocument && <p>Sprich ihn aus. Der fertige Text folgt nach der Aufnahme.</p>}
               </div>
               <button className="mode-badge" onClick={() => setShowSettings(true)}>
                 <span className="status-orb" />
                 <span>
-                  <small>Modus</small>
-                  {settings.transcriptionMode === "quality" ? "Beste Qualität" : "Lokal"}
+                  <small>{needsKey ? "Beste Qualität" : "Modus"}</small>
+                  {needsKey ? "API-Key fehlt" : settings.transcriptionMode === "quality" ? "Beste Qualität" : "Lokal"}
                 </span>
                 <ChevronIcon />
               </button>
             </div>
 
             {!d.supported && (
-              <div className="kt-hair rounded-3xl bg-lav/40 p-4 text-sm text-lav-ink">
+              <div className="kt-hair rounded-xl bg-lav/40 p-4 text-sm text-lav-ink">
                 {settings.transcriptionMode === "local" ? (
                   <>Dein Browser unterstützt hier kein lokales Live-Diktat. Nutze Chrome, Edge oder Safari, wechsle zu <b>Beste Qualität</b> oder transkribiere eine Aufnahme im Tab <b>Dateien</b>.</>
                 ) : (
@@ -428,13 +449,13 @@ export default function Home() {
               </div>
             )}
             {d.error && (
-              <div role="alert" className="kt-hair rounded-3xl bg-ember-soft p-4 text-sm text-ink">
+              <div role="alert" className="kt-hair rounded-xl bg-ember-soft p-4 text-sm text-ink">
                 {d.error}
               </div>
             )}
             {notice && (
               <div role={notice.kind === "success" ? "status" : "alert"}
-                className={`kt-hair rounded-3xl p-4 text-sm text-ink ${notice.kind === "success" ? "bg-teal/12" : "bg-ember-soft"}`}>
+                className={`kt-hair rounded-xl p-4 text-sm text-ink ${notice.kind === "success" ? "bg-teal/12" : "bg-ember-soft"}`}>
                 <p>{notice.message}</p>
                 {pendingJob.current && (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -454,27 +475,20 @@ export default function Home() {
                 d.listening ? "kt-elevated" : ""
               }`}
             >
-              {d.listening ? (
-                <div className="min-h-[38vh] whitespace-pre-wrap text-lg leading-relaxed">
-                  {d.finalText}
-                  {sessionSettings.current.transcriptionMode === "quality" ? (
-                    <p className="mt-4 text-base text-mut">Aufnahme läuft. Im Qualitätsmodus erscheint der fertige Text nach dem Stoppen.</p>
-                  ) : (
-                    <>{d.finalText && d.interim ? " " : ""}<span className="text-mut">{d.interim}</span><span className="live-caret" /></>
-                  )}
+              {processing ? (
+                <div className="capture-stage" role="status"><div className="processing-orbit"><span /></div><h2>Aus Sprache wird Text.</h2><p>{processingLabel}</p></div>
+              ) : d.listening ? (
+                <div className="listening-stage">
+                  <div className="capture-stage"><div className="listening-aperture"><Waveform stream={d.stream} bars={13} className="live-wave" /></div><h2>Du hast das Wort.</h2><p>{settings.transcriptionMode === "quality" ? "Klartext hört zu. Dein Text erscheint nach dem Stoppen." : "Die Browser-Erkennung hört zu."}</p></div>
+                  {settings.transcriptionMode === "local" && <p className="live-transcript">{d.finalText} <span>{d.interim}</span><span className="live-caret" /></p>}
                 </div>
+              ) : hasDocument ? (
+                <textarea ref={editor} value={d.finalText} aria-label="Diktierter Text" onChange={(e) => d.setFinalText(e.target.value)} placeholder="Deine Worte …" className="transcript-editor" />
               ) : (
-                <textarea
-                  value={d.finalText}
-                  readOnly={processing}
-                  aria-label="Diktierter Text"
-                  onChange={(e) => d.setFinalText(e.target.value)}
-                  placeholder="Halte die Leertaste gedrückt oder tippe unten auf „Diktieren“ und sprich einfach los …"
-                  className="min-h-[42vh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none placeholder:text-mut/60"
-                />
+                <div className="capture-stage idle-stage"><button className="resonance-aperture" onClick={startDictation} aria-label="Diktat starten"><LogoBars /></button><p className="ready-label">{needsKey ? "Einmal einrichten. Dann lossprechen." : "Bereit, wenn du es bist."}</p><button className="write-instead" onClick={() => setComposing(true)}>Oder direkt schreiben <span aria-hidden="true">↗</span></button></div>
               )}
 
-              <div className="mt-4 flex flex-wrap items-center gap-2.5 border-t border-line pt-4">
+              <div className="editor-meta">
                 <span className="chip bg-teal/12 text-teal">
                   <span className="h-1.5 w-1.5 rounded-full bg-teal" />
                   {langLabel}
@@ -488,10 +502,11 @@ export default function Home() {
                     {showRaw ? "Original ausblenden" : "Original anzeigen"}
                   </button>
                 )}
-                <div className="ml-auto flex items-center gap-1.5">
+                <div className="editor-actions" hidden={!hasDocument}>
                   <button
                     onClick={() => {
                       d.setFinalText("");
+                      setComposing(false);
                       setLastRaw(null);
                       setShowRaw(false);
                       pendingJob.current = null;
@@ -505,7 +520,7 @@ export default function Home() {
                   <button
                     onClick={() => copy(d.finalText)}
                     disabled={!d.finalText || processing || d.listening}
-                    className="btn btn-primary px-5 py-2 text-xs"
+                    className="btn btn-secondary px-5 py-2 text-xs"
                   >
                     <CopyIcon />
                     Kopieren
@@ -523,11 +538,7 @@ export default function Home() {
               )}
             </div>
 
-            <p className="text-center text-xs text-mut">
-              <Kbd>Leertaste</Kbd> halten zum Diktieren&nbsp;·&nbsp;
-              <Kbd>⌘/Strg</Kbd>+<Kbd>⇧</Kbd>+<Kbd>Leer</Kbd> Start/Stopp
-              (Hands-free)&nbsp;·&nbsp;<Kbd>Esc</Kbd> beenden
-            </p>
+            <div className="capture-footer">{captureControl}<p><Kbd>Leertaste</Kbd> halten zum Diktieren<br /><span><Kbd>⌘/Strg</Kbd> + <Kbd>⇧</Kbd> + <Kbd>Leer</Kbd> für Start / Stopp</span></p></div>
           </div>
         )}
 
@@ -588,49 +599,6 @@ export default function Home() {
         )}
       </main>
 
-      {/* ---------- Schwebende Diktier-Pill ---------- */}
-      <div className="dictation-dock pointer-events-none fixed z-30 flex justify-center px-4">
-        <div className="pointer-events-auto">
-          {processing ? (
-            <div className="processing-pill pop" role="status" aria-live="polite">
-              <span className="spinner" />
-              <span>{processingLabel}</span>
-            </div>
-          ) : d.listening ? (
-            <div className="rec-halo pop flex items-center gap-3 rounded-full bg-ink px-4 py-2.5 text-surface">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ember opacity-70" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-ember" />
-              </span>
-              <Waveform stream={d.stream} className="h-6 w-28 text-ember" />
-              <span className="w-10 text-center font-mono text-sm tabular-nums">
-                {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
-              </span>
-              <button
-                onClick={finishDictation}
-                aria-label="Aufnahme beenden"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-b from-ember to-ember-2 text-white transition-transform hover:scale-105 active:scale-95"
-              >
-                <StopIcon />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={startDictation}
-              disabled={processing}
-              className="dictation-pill group flex items-center gap-2.5 rounded-full py-2.5 pl-2.5 pr-5 transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-b from-ember to-ember-2 text-white shadow-[var(--sh-glow)] transition-transform duration-200 group-hover:scale-105">
-                <MicIcon />
-              </span>
-              <span className="text-sm font-bold text-ink">Diktieren</span>
-              <span className="hidden text-xs text-mut sm:inline">
-                Leertaste halten
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* ---------- Toast ---------- */}
       {toast && (
@@ -651,7 +619,9 @@ export default function Home() {
 function SettingsCard({
   settings,
   setSettings,
+  section,
 }: {
+  section: string;
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
 }) {
@@ -670,7 +640,7 @@ function SettingsCard({
 
   return (
     <div className="settings-sections">
-      <section className="settings-section">
+      <section className="settings-section" hidden={section !== "transkription"}>
         <div className="section-label">
           <span>Transkription</span>
           <small>Wähle KI-Qualität oder Erkennung ohne eigenen API-Key</small>
@@ -716,7 +686,7 @@ function SettingsCard({
         )}
       </section>
 
-      <section className="settings-section settings-grid">
+      <section className="settings-section settings-grid" hidden={section !== "sprache"}>
         <label className="block text-sm">
           <span className="mb-1.5 block font-semibold">Sprache</span>
           <select value={settings.lang} onChange={(e) => setSettings((s) => ({ ...s, lang: e.target.value }))} className="field">
@@ -761,7 +731,7 @@ function SettingsCard({
         </label>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section" hidden={section !== "kontext"}>
         <label className="block text-sm">
           <span className="mb-1.5 block font-semibold">Dein Kontext</span>
           <textarea
@@ -774,7 +744,7 @@ function SettingsCard({
         <p className="setting-help">Hilft der Erkennung, ähnlich klingende Fachbegriffe richtig zuzuordnen.</p>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section" hidden={section !== "woerterbuch"}>
         <p className="mb-1.5 text-sm font-semibold">Persönliches Wörterbuch</p>
         <p className="mb-3 text-xs leading-relaxed text-mut">
           Namen und Fachbegriffe werden dem Qualitätsmodell schon vor der Erkennung als Hinweis mitgegeben.
@@ -783,6 +753,7 @@ function SettingsCard({
           <input
             value={from}
             onChange={(e) => setFrom(e.target.value)}
+            aria-label="Erkannter Begriff"
             placeholder="erkannt als …"
             className="field min-w-0 flex-1 text-sm"
           />
@@ -790,6 +761,7 @@ function SettingsCard({
             value={to}
             onChange={(e) => setTo(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addEntry()}
+            aria-label="Gewünschter Begriff"
             placeholder="soll heißen …"
             className="field min-w-0 flex-1 text-sm"
           />
@@ -843,11 +815,11 @@ function Kbd({ children }: { children: React.ReactNode }) {
 function NavIcon({ tab }: { tab: Tab }) {
   const paths: Record<Tab, React.ReactNode> = {
     diktat: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v4" /></>,
-    dateien: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 15h8M8 18h5" /></>,
-    verlauf: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2M3 12H1" /></>,
+    dateien: <><path d="M13.5 3.5H7A2.5 2.5 0 0 0 4.5 6v12A2.5 2.5 0 0 0 7 20.5h10a2.5 2.5 0 0 0 2.5-2.5V9.5Z" /><path d="M13.5 3.5v4a2 2 0 0 0 2 2h4M8.5 14v2M12 12v6M15.5 14v2" /></>,
+    verlauf: <><path d="M4.7 7.5a8.5 8.5 0 1 1-.9 7.7M3.5 3.5v5h5" /><path d="M12 7.5V12l3 2" /></>,
     desktop: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></>,
   };
-  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[tab]}</svg>;
+  return <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{paths[tab]}</svg>;
 }
 
 function CloseIcon() {
@@ -880,14 +852,7 @@ function CopyIcon() {
 }
 
 function LogoBars() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-      <rect x="1" y="7" width="2.6" height="6" rx="1.3" />
-      <rect x="5.8" y="4" width="2.6" height="12" rx="1.3" />
-      <rect x="10.6" y="1" width="2.6" height="18" rx="1.3" />
-      <rect x="15.4" y="6" width="2.6" height="8" rx="1.3" />
-    </svg>
-  );
+  return <svg aria-hidden="true" width="24" height="28" viewBox="0 0 24 28" fill="currentColor"><rect x="3" y="8" width="3" height="15" rx="1.5" /><rect x="10.5" y="2" width="3" height="24" rx="1.5" /><rect x="18" y="6" width="3" height="14" rx="1.5" /></svg>;
 }
 
 function MicIcon() {

@@ -1,22 +1,16 @@
 // Erzeugt icon.png (512x512) ohne externe Abhängigkeiten.
-// Ember-gerundetes Quadrat mit fünf weißen Balken (wie das Web-Icon).
+// Resonanz: signalblaues Quadrat mit drei weißen Sprachbalken.
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 
 const S = 512;
-const EMBER = [249, 115, 22];
+const SIGNAL_BLUE = [54, 89, 217];
 const WHITE = [255, 255, 255];
 const BG_RADIUS = 120;
 
 // Balken skaliert x4 aus dem 128er-Viewport des Web-Icons
-const BARS = [
-  [96, 208, 36, 96],
-  [164, 160, 36, 192],
-  [232, 104, 36, 304],
-  [300, 176, 36, 160],
-  [368, 224, 36, 64],
-];
+const BARS = [[136, 172, 40, 196], [236, 88, 40, 336], [336, 144, 40, 196]];
 const BAR_R = 18;
 
 function inRoundRect(px, py, x0, y0, x1, y1, r) {
@@ -39,7 +33,7 @@ for (let y = 0; y < S; y++) {
         break;
       }
     }
-    if (!col && inRoundRect(x + 0.5, y + 0.5, 0, 0, S, S, BG_RADIUS)) col = EMBER;
+    if (!col && inRoundRect(x + 0.5, y + 0.5, 0, 0, S, S, BG_RADIUS)) col = SIGNAL_BLUE;
     if (col) {
       rgba[i] = col[0];
       rgba[i + 1] = col[1];

@@ -255,14 +255,14 @@ export default function UploadPanel({
           setDragOver(false);
           addFiles(e.dataTransfer.files);
         }}
-        className={`kt-card !rounded-[32px] p-10 text-center transition-all duration-200 ${
+        className={`kt-card !rounded-2xl p-10 text-center transition-all duration-200 ${
           dragOver
             ? "!border-ember bg-ember-soft scale-[1.01]"
             : ""
         }`}
         style={{ borderStyle: "dashed", borderWidth: "1.5px" }}
       >
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-ember to-ember-2 text-white shadow-[var(--sh-glow)]">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-ember text-white shadow-[var(--sh-glow)]">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 17V4" />
             <path d="m6 10 6-6 6 6" />
@@ -338,7 +338,7 @@ export default function UploadPanel({
           {it.status !== "fertig" && it.status !== "fehler" && (
             <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-ember to-ember-2 transition-all duration-300"
+                className="h-full rounded-full bg-ember transition-all duration-300"
                 style={{
                   width:
                     it.status === "modell" && it.detail

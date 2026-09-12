@@ -1,6 +1,6 @@
 # Klartext Status
 
-Stand: 11. September 2026
+Stand: 12. September 2026
 
 ## Produktziel
 
@@ -9,6 +9,38 @@ macOS und Windows. Qualität vor Live-Geschwindigkeit, kein kostenpflichtiges
 Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
 
 ## Aktueller Stand
+
+- Release 0.3.0 vorbereitet: Mac- und Windows-Installer gebaut, alle Paketdateien
+  gegen die Quellen geprüft, Mac-Signatur und isolierter Einstellungs-Smoke-Test
+  erfolgreich. 57 Tests und finaler Web-Build grün. Prüfsummen stehen in
+  `desktop/RELEASE_CHECKSUMS.md`.
+- **Resonanz-Redesign umgesetzt und auf diesem Mac installiert (noch nicht veröffentlicht):**
+  Web-Sprachraum mit dreiteiligem Aufnahmezeichen, unterscheidbaren Aufnahme- und
+  Verarbeitungszuständen, direkt bearbeitbarem Text und kürzerer Zeilenbreite.
+  Neue SVG-Icons für Dateien und Verlauf, helle/dunkle Darstellung, neue App-Icons.
+  Einstellungen als nativer Web-Dialog mit Fokusbegrenzung und separaten Bereichen.
+- **Neues Desktop-Einstellungsfenster:** Sprache, Modus, Modell, Kontext,
+  Autostart, Sprachaktivierung, Berechtigungsstatus und Darstellung über validierte
+  IPC-Aufrufe; vorhandene Tray-Einstellungen bleiben verfügbar und synchron.
+  Separater Preload gibt keine Schlüsselwerte aus. Aufnahmeblase, Schlüssel- und
+  Sprachaktivierungsfenster teilen die Resonanz-Gestaltung. Das Mac-Tray verwendet
+  ein zur Systemdarstellung passendes Template-Zeichen.
+- Resonanz geprüft: Produktionsbuild und TypeScript grün; 57 Regressionstests
+  grün. Web-Ansichten und Dialog bei 1280×720 und 390×844 geprüft, keine horizontalen
+  Überläufe in den Hauptansichten. Keine Browser-Konsolenfehler in der Prüfung.
+  Natives Mac-Einstellungsfenster hell/dunkel, Kontextspeicherung und erneutes Laden
+  sowie Schlüssel-Eingabefenster visuell und funktional geprüft. Sprachblasen-Markup
+  hell/dunkel und Aufnahme/Verarbeitung ohne Audioaufnahme gerendert geprüft.
+  Mac-App lokal gebündelt, Paketinhalt gegen Quellen und Signatur verifiziert;
+  isolierter Einstellungs-Smoke-Test auch im Paket erfolgreich.
+- Keine neue Mikrofon-/Cloud-End-to-End-Aufnahme und kein realer Windows-Test für
+  das Redesign. Die Mac-App unter `/Applications/Klartext.app` wurde durch den
+  geprüften Resonanz-Build ersetzt; Paketvergleich, Signatur und Start des neuen
+  Einstellungsfensters bestätigt. Die vorherige App liegt unter
+  `desktop/dist/install-backups/20260912-221540/Klartext.app`. Benutzerprofil und
+  Sprachmodelle wurden nicht ersetzt. Veröffentlichte Downloads sind noch der
+  vorherige Stand. Entwicklungs-Vorschau läuft mit separatem Profil; für
+  Abnahmen sind `--settings-preview` und `--settings-smoke-test` verfügbar.
 
 - Desktop 0.2.2 unterstützt eine vollständig lokale, persönlich eingelernte
   Sprachaktivierung mit „Hey Klartext“. Das Modell bleibt lokal im Benutzerprofil;
@@ -83,7 +115,7 @@ Realtime-Upgrade im Standardmodus. Kein Verkaufsstart.
   unter den stabilen Downloadnamen gebaut und inhaltlich geprüft.
 - Website enthält noindex/nofollow. Weiterhin per Link erreichbar, kein Login.
 
-## Verifiziert in diesem Stand
+## Frühere Funktionsprüfungen (bis 0.2.2)
 
 - 55 automatisierte Regressionstests grün, darunter getrennte Entwicklungsprofile
   und Shortcuts, EPIPE-Behandlung, fehlertolerantes Dateilogging, Aktivierung und

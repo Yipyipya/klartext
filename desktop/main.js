@@ -13,10 +13,12 @@ const {
   nativeImage,
   Notification,
   powerSaveBlocker,
+  nativeTheme,
 } = require("electron");
 const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const { validateSettingsPatch } = require("./settings-contract");
 const { configureLogin } = require("./startup");
 const { configureRuntime, createFileLogger, installPipeGuards } = require("./runtime");
 const { ACCESSIBILITY_SETTINGS_URL, getPasteAccess } = require("./accessibility");
@@ -30,7 +32,9 @@ const { trimTailMs, stripTrailingStopCommand } = require("./wake-controller");
 const WEB_URL = "https://klartext-ai.vercel.app";
 const IS_MAC = process.platform === "darwin";
 const IS_WIN = process.platform === "win32";
-const SMOKE_TEST = process.argv.includes("--smoke-test");
+const SETTINGS_PREVIEW = process.argv.includes("--settings-preview");
+const SETTINGS_SMOKE = process.argv.includes("--settings-smoke-test");
+const SMOKE_TEST = process.argv.includes("--smoke-test") || SETTINGS_PREVIEW || SETTINGS_SMOKE;
 const SETUP_VOICE = process.argv.includes("--setup-voice");
 
 // Der lokale Wake-Word-Renderer muss auch als vollständig unsichtbares
@@ -86,7 +90,7 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 app.on("second-instance", (_event, argv) => {
   // Zweiter Start: vorhandene Instanz zeigt ihr Menü, statt sich zu verdoppeln.
   if (argv.includes("--setup-voice")) openWakeSetupWindow();
-  else if (tray) tray.popUpContextMenu();
+  else openSettingsWindow();
 });
 
 /* ---------- Einstellungen (userData/settings.json) ---------- */
@@ -97,6 +101,7 @@ const SETTINGS_DEFAULTS = {
   mode: "quality", // "quality" (gpt-transcribe) | "local" (Whisper)
   model: "genau", // "genau" (whisper-small) | "schnell" (whisper-base)
   launchAtLogin: true,
+  theme: "system",
   openaiKeyEnc: null, // verschlüsselt über Schlüsselbund / Credential Vault
   voiceActivation: false,
   context: "Software, KI, Automatisierung, Produktarbeit und persönliche Nachrichten",
@@ -434,8 +439,8 @@ function openKeyWindow() {
     return;
   }
   keyWin = new BrowserWindow({
-    width: 480,
-    height: 300,
+    width: 540,
+    height: 390,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -447,7 +452,8 @@ function openKeyWindow() {
 }
 
 ipcMain.on("save-api-key", (_e, key) => {
-  const trimmed = (key || "").trim();
+  if (_e.sender !== keyWin?.webContents || typeof key !== "string" || key.length > 4096) return;
+  const trimmed = key.trim();
   if (trimmed && safeStorage.isEncryptionAvailable()) {
     settings.openaiKeyEnc = safeStorage.encryptString(trimmed).toString("base64");
     cachedOpenAIKey = trimmed;
@@ -462,7 +468,93 @@ ipcMain.on("save-api-key", (_e, key) => {
   updateTray();
 });
 
-ipcMain.on("close-key-window", () => keyWin?.close());
+ipcMain.on("close-key-window", (event) => { if (event.sender === keyWin?.webContents) keyWin.close(); });
+
+/* ---------- Eigenes Einstellungsfenster ---------- */
+let settingsWin = null;
+function settingsSnapshot() {
+  const paste = getCurrentPasteAccess();
+  let microphone = "Wird beim ersten Diktat vom Betriebssystem angefragt.";
+  if (IS_MAC || IS_WIN) {
+    const status = systemPreferences.getMediaAccessStatus("microphone");
+    microphone = ({ granted: "Mikrofon ist freigegeben.", denied: "Mikrofonzugriff ist nicht erlaubt.", restricted: "Mikrofonzugriff ist eingeschränkt.", "not-determined": "Freigabe wird beim ersten Diktat angefragt." })[status] || microphone;
+  }
+  // No API key, encrypted key, filesystem path or enrollment data leaves main.
+  return {
+    lang: settings.lang, mode: settings.mode, model: settings.model,
+    context: settings.context, theme: settings.theme || "system",
+    voiceActivation: settings.voiceActivation, hasKey: Boolean(settings.openaiKeyEnc),
+    login: SMOKE_TEST ? { supported: false, enabled: false, detail: "In der isolierten Vorschau deaktiviert." } : loginState, wakeModelsAvailable, wakeStatus, microphone,
+    pasteDetail: IS_MAC ? (paste.canPaste ? "Bedienungshilfen sind freigegeben." : "Bedienungshilfen bitte in macOS freigeben.") : "Einfügen per Tastatursimulation. Einzelne Apps können es einschränken.",
+    platform: process.platform, shortcut: HOTKEY_LABEL, version: app.getVersion(),
+    busy: recording || processing || starting, preview: SMOKE_TEST,
+  };
+}
+function syncSettingsWindow() {
+  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send("settings-changed", settingsSnapshot());
+}
+function openSettingsWindow() {
+  if (!settings) return;
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    if (settingsWin.isMinimized()) settingsWin.restore();
+    settingsWin.show(); settingsWin.focus(); return;
+  }
+  settingsWin = new BrowserWindow({
+    width: 850, height: 700, minWidth: 690, minHeight: 590,
+    title: "Klartext · Einstellungen", backgroundColor: nativeTheme.shouldUseDarkColors ? "#151b27" : "#fbfcfe",
+    show: false, autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, "settings-preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  settingsWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  settingsWin.webContents.on("will-navigate", event => event.preventDefault());
+  settingsWin.once("ready-to-show", () => settingsWin?.show());
+  settingsWin.on("focus", syncSettingsWindow);
+  settingsWin.on("closed", () => { settingsWin = null; if (SETTINGS_PREVIEW && !isQuitting) quitApp(); });
+  settingsWin.loadFile(path.join(__dirname, "settings.html"));
+}
+function requireSettingsSender(event) {
+  if (!settingsWin || event.sender !== settingsWin.webContents || event.senderFrame !== settingsWin.webContents.mainFrame) throw new Error("Ungültiges Einstellungsfenster.");
+}
+ipcMain.handle("settings-read", event => {
+  requireSettingsSender(event);
+  const snapshot = settingsSnapshot();
+  if (SETTINGS_SMOKE) setTimeout(() => { console.log("SETTINGS_SMOKE_OK: settings renderer connected, isolated profile, no microphone or login registration"); quitApp(); }, 300);
+  return snapshot;
+});
+ipcMain.handle("settings-update", async (event, input) => {
+  requireSettingsSender(event);
+  const patch = validateSettingsPatch(input);
+  if ((recording || processing || starting) && Object.keys(patch).some(key => key !== "theme")) throw new Error("Bitte warte, bis das Diktat abgeschlossen ist.");
+  if (SMOKE_TEST && (Object.hasOwn(patch, "launchAtLogin") || Object.hasOwn(patch, "voiceActivation"))) throw new Error("In der isolierten Vorschau nicht verfügbar.");
+  if (patch.voiceActivation && !wakeModelsAvailable) throw new Error("Bitte zuerst den persönlichen Startbefehl einrichten.");
+  const next = { ...settings, ...patch };
+  fs.writeFileSync(settingsPath(), JSON.stringify(next));
+  const previous = settings;
+  settings = next;
+  if (Object.hasOwn(patch, "theme")) nativeTheme.themeSource = settings.theme;
+  if (Object.hasOwn(patch, "launchAtLogin")) loginState = configureLogin(app, settings, process.platform, process.execPath, true);
+  if (previous.mode !== settings.mode || previous.model !== settings.model) prepareSelectedMode();
+  if (previous.voiceActivation !== settings.voiceActivation) await refreshWakeActivation();
+  updateTray();
+  return settingsSnapshot();
+});
+ipcMain.handle("settings-action", async (event, action) => {
+  requireSettingsSender(event);
+  if (["key", "voice-setup"].includes(action) && (recording || processing || starting)) throw new Error("Bitte warte, bis das Diktat abgeschlossen ist.");
+  if (SMOKE_TEST && !["refresh", "key"].includes(action)) throw new Error("Systemaktionen sind in der isolierten Vorschau deaktiviert.");
+  switch (action) {
+    case "key": openKeyWindow(); break;
+    case "voice-setup": openWakeSetupWindow(); break;
+    case "microphone":
+      await shell.openExternal(IS_MAC ? "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone" : IS_WIN ? "ms-settings:privacy-microphone" : "https://klartext-ai.vercel.app"); break;
+    case "accessibility": if (IS_MAC) await shell.openExternal(ACCESSIBILITY_SETTINGS_URL); break;
+    case "logs": shell.showItemInFolder(logPath); break;
+    case "refresh": break;
+    default: throw new Error("Unbekannte Aktion.");
+  }
+  return settingsSnapshot();
+});
+nativeTheme.on("updated", syncSettingsWindow);
 
 /* ---------- Persönlicher Startbefehl und Hintergrundlistener ---------- */
 let wakeSetupWin = null;
@@ -707,7 +799,7 @@ ipcMain.on("pill-error", (_e, message) => {
 });
 
 function prepareSelectedMode() {
-  if (!pillReady || recording || processing) return;
+  if (SMOKE_TEST || !pillReady || recording || processing) return;
   preparation = settings.mode === "local" ? "Lokales Modell wird vorbereitet …" : "Qualitätsmodus bereit";
   pill.webContents.send("prepare", { mode: settings.mode, model: settings.model });
   updateTray();
@@ -717,6 +809,7 @@ ipcMain.on("renderer-ready", (event) => {
   if (event.sender !== pill?.webContents) return;
   pillReady = true;
   if (SMOKE_TEST) {
+    if (SETTINGS_PREVIEW || SETTINGS_SMOKE) { openSettingsWindow(); return; }
     console.log("SMOKE_OK: renderer ready, no microphone or login registration");
     quitApp();
     return;
@@ -734,9 +827,10 @@ ipcMain.on("prepared", (event, result) => {
 
 /* ---------- Tray (Menüleiste) ---------- */
 function updateTray() {
+  syncSettingsWindow();
   if (!tray) return;
   const pasteAccess = getCurrentPasteAccess();
-  if (IS_MAC) tray.setTitle(recording ? " 🔴" : " 🎙️");
+  if (IS_MAC) tray.setTitle(recording ? " ●" : processing ? " ···" : "");
   const langItems = [
     ["Deutsch", "de"],
     ["English", "en"],
@@ -784,6 +878,8 @@ function updateTray() {
 
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: "Einstellungen …", accelerator: "CommandOrControl+,", click: openSettingsWindow },
+      { type: "separator" },
       {
         label: processing ? "Text wird verarbeitet …" : recording ? "Aufnahme beenden" : "Diktieren",
         enabled: pillReady && !processing && !starting,
@@ -919,9 +1015,12 @@ function updateTray() {
 }
 
 function createTray() {
-  // macOS zeigt einen Emoji-Titel; Windows/Linux brauchen ein echtes Icon
+  // Template-Glyph adapts to macOS appearance; Windows uses the app icon.
   let img = nativeImage.createEmpty();
-  if (!IS_MAC) {
+  if (IS_MAC) {
+    img = nativeImage.createFromPath(path.join(__dirname, "trayTemplate@2x.png")).resize({ width: 18, height: 18 });
+    img.setTemplateImage(true);
+  } else {
     try {
       img = nativeImage
         .createFromPath(path.join(__dirname, "icon.png"))
@@ -950,6 +1049,9 @@ function quitApp() {
   } catch {
     /* egal */
   }
+  try {
+    settingsWin?.destroy();
+  } catch { /* already closed */ }
   try {
     keyWin?.destroy();
   } catch {
@@ -988,6 +1090,7 @@ app.whenReady().then(async () => {
     return;
   }
   settings = loadSettings();
+  nativeTheme.themeSource = ["system", "light", "dark"].includes(settings.theme) ? settings.theme : "system";
   logError("Klartext-App gestartet", `Version ${app.getVersion()}`);
   if (!SMOKE_TEST) {
     loginState = configureLogin(app, settings, process.platform, process.execPath);
@@ -998,7 +1101,7 @@ app.whenReady().then(async () => {
   createPill();
   createTray();
 
-  const ok = globalShortcut.register(HOTKEY, toggleRecording);
+  const ok = SMOKE_TEST || globalShortcut.register(HOTKEY, toggleRecording);
   if (!ok) {
     preparation = `Shortcut ${HOTKEY_LABEL} ist bereits belegt`;
     logError(`Globaler Shortcut ${HOTKEY} konnte nicht registriert werden`);
@@ -1012,7 +1115,7 @@ app.whenReady().then(async () => {
   }
 
   if (SMOKE_TEST) {
-    setTimeout(() => { logError("SMOKE_TIMEOUT"); quitApp(); }, 15_000).unref();
+    if (!SETTINGS_PREVIEW) setTimeout(() => { logError("SMOKE_TIMEOUT"); quitApp(); }, 15_000).unref();
     return;
   }
   try {

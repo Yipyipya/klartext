@@ -2,87 +2,27 @@
 <html lang="de">
 <head>
 <meta charset="utf-8" />
+<link rel="stylesheet" href="resonanz.css">
 <style>
-  html, body {
-    margin: 0;
-    height: 100%;
-    background: transparent;
-    overflow: hidden;
-    font-family: -apple-system, "Segoe UI", sans-serif;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  #wrap {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 10px;
-    padding-bottom: 10px;
-  }
-  /* Live-Mitschrift über der Pill */
-  #preview {
-    display: none;
-    max-width: 480px;
-    max-height: 96px;
-    overflow: hidden;
-    background: rgba(12, 17, 15, 0.94);
-    color: #edf3ef;
-    border: 1px solid rgba(45, 212, 191, 0.18);
-    border-radius: 16px;
-    padding: 10px 16px;
-    font-size: 14px;
-    line-height: 1.45;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-  }
-  #preview.visible { display: block; }
-  #preview .interim { color: #b7ac9b; }
-  #pill {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: rgba(12, 17, 15, 0.96);
-    color: #edf3ef;
-    border: 1px solid rgba(237, 243, 239, 0.14);
-    border-radius: 999px;
-    padding: 10px 18px;
-    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.52), inset 0 1px rgba(255, 255, 255, 0.035);
-    backdrop-filter: blur(20px);
-  }
-  #dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #ffa946;
-    animation: blink 1.2s ease-in-out infinite;
-  }
-  @keyframes blink {
-    50% { opacity: 0.35; }
-  }
-  canvas { width: 130px; height: 26px; }
-  #timer {
-    font-variant-numeric: tabular-nums;
-    font-size: 13px;
-    min-width: 34px;
-    text-align: center;
-  }
-  #status {
-    font-size: 12px;
-    color: #b7ac9b;
-    max-width: 140px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .processing #dot { background: #2dd4bf; animation: none; }
+:root{color-scheme:light}
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-select:none}
+#wrap{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:12px;padding:12px 10px}
+#preview{display:none;max-width:480px;max-height:110px;overflow:hidden;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:13px 17px;font-size:14px;line-height:1.6;box-shadow:0 8px 24px #15274420}
+#preview.visible{display:block}#preview .interim{color:var(--muted)}
+#pill{display:flex;align-items:center;gap:13px;background:var(--surface);color:var(--ink);border:1px solid var(--strong);border-radius:30px;padding:14px 20px;min-height:57px;box-shadow:0 7px 20px #15274428}
+#dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace,monospace;font-variant-numeric:tabular-nums;min-width:34px;text-align:center}
+#status{font-size:12px;color:var(--muted);max-width:245px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.processing canvas{display:none}.processing #dot{width:17px;height:17px;background:none;border:2px solid var(--line);border-top-color:var(--accent);animation:spin 1s linear infinite}.processing #timer{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.processing #dot{animation:none}}
 </style>
 </head>
 <body>
   <div id="wrap">
     <div id="preview"></div>
-    <div id="pill">
+    <div id="pill" role="status" aria-live="polite">
+      <span class="voice-mark" aria-hidden="true"><i></i><i></i><i></i></span>
       <span id="dot"></span>
       <canvas id="wave"></canvas>
       <span id="timer">0:00</span>
@@ -209,7 +149,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       analyser.getByteFrequencyData(data);
-      ctx.fillStyle = "#ffa946";
+      ctx.fillStyle = getComputedStyle(canvas).color;
       const gap = 3, bw = Math.max(2, (w - gap * (bars - 1)) / bars);
       for (let i = 0; i < bars; i++) {
         const v = data[Math.floor((i / bars) * data.length * 0.7)] / 255;

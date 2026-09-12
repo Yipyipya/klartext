@@ -36,19 +36,19 @@ export default function HistoryPanel({
 
   const tiles = [
     { label: "Wörter gesamt", value: stats.totalWords.toLocaleString("de-DE") },
-    { label: "Ø Tempo", value: stats.avgWpm ? `${stats.avgWpm} WPM` : "keins" },
-    { label: "Tage-Serie", value: `${stats.streakDays} 🔥` },
+    { label: "Ø Tempo", value: stats.avgWpm ? `${stats.avgWpm} WPM` : "—" },
+    { label: "Tage-Serie", value: String(stats.streakDays) },
     { label: "Aufnahmen", value: String(stats.entries) },
   ];
 
   return (
     <div className="space-y-5">
       {/* Statistik-Kacheln */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {tiles.map((t, i) => (
+      <div className="history-stats">
+        {tiles.map((t) => (
           <div
             key={t.label}
-            className={`kt-card rise rise-${(i % 3) + 1} p-4 text-center`}
+            className="history-stat"
           >
             <p className="font-display text-[2rem] leading-none tracking-tight">
               {t.value}
@@ -64,7 +64,8 @@ export default function HistoryPanel({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Verlauf durchsuchen …"
-            className="field !rounded-full px-5 py-2.5 text-sm"
+            aria-label="Verlauf durchsuchen"
+            className="field px-4 py-2.5 text-sm"
           />
           <button
             onClick={() => {
@@ -85,13 +86,15 @@ export default function HistoryPanel({
           <p className="font-display text-2xl tracking-tight">Noch nichts diktiert</p>
           <p className="mt-1 text-sm text-mut">
             Jedes Diktat und jede transkribierte Datei landet automatisch hier.
-            Alles bleibt nur auf deinem Gerät.
+            Der Verlauf wird nur in diesem Browser gespeichert.
           </p>
         </div>
       )}
 
+      {entries.length > 0 && filtered.length === 0 && <p role="status" className="py-10 text-sm text-mut">Keine Aufnahmen für „{query}“ gefunden.</p>}
+
       {filtered.map((e) => (
-        <div key={e.id} className="kt-card pop p-5">
+        <div key={e.id} className="history-entry">
           <div className="flex flex-wrap items-center gap-2 text-xs text-mut">
             <span
               className={`chip ${

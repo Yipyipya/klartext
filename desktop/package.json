@@ -1,6 +1,6 @@
 {
   "name": "klartext-desktop",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "description": "Klartext Desktop – systemweites Diktat per globalem Shortcut, Text landet direkt an der Cursor-Position",
   "main": "main.js",
@@ -42,7 +42,13 @@
       "preload.js",
       "pill.html",
       "keywin.html",
-      "icon.png"
+      "icon.png",
+      "settings.html",
+      "settings-preload.js",
+      "settings-renderer.js",
+      "settings-contract.js",
+      "resonanz.css",
+      "trayTemplate@2x.png"
     ],
     "mac": {
       "category": "public.app-category.productivity",

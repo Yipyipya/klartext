@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "Präzises Diktat und Audio-Transkription im Browser und auf dem Desktop.",
     start_url: "/",
     display: "standalone",
-    background_color: "#f2f5f3",
-    theme_color: "#f2f5f3",
+    background_color: "#fbfcfe",
+    theme_color: "#fbfcfe",
     icons: [
       {
         src: "/icon.svg",

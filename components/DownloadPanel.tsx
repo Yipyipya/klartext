@@ -81,7 +81,7 @@ export default function DownloadPanel() {
       {/* Warum die Desktop-App */}
       <div className="kt-card rise rise-1 p-6 sm:p-7">
         <div className="flex flex-wrap items-start gap-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-b from-ember to-ember-2 text-white shadow-[var(--sh-glow)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-ember text-white shadow-[var(--sh-glow)]">
             <BoltIcon />
           </span>
           <div className="min-w-0 flex-1">
@@ -181,10 +181,10 @@ export default function DownloadPanel() {
       </div>
 
       {/* Hinweis zur Signatur */}
-      <div className="kt-hair rounded-3xl bg-lav/40 p-5 text-sm leading-relaxed text-lav-ink">
+      <div className="kt-hair rounded-xl bg-lav/40 p-5 text-sm leading-relaxed text-lav-ink">
         <p className="font-semibold">Ein kurzer Hinweis zur Sicherheit</p>
         <p className="mt-1">
-          Version 0.1.2 ist für persönliche Tests gedacht. Mac ist nur ad-hoc signiert
+          Version 0.3.0 ist für persönliche Tests gedacht. Mac ist nur ad-hoc signiert
           und nicht Apple-notarisiert; Windows hat noch kein vertrauenswürdiges
           Herausgeberzertifikat. Lade die Apps nur aus diesem Projekt. Der Quellcode liegt auf{" "}
           <a
@@ -197,7 +197,8 @@ export default function DownloadPanel() {
         </p>
         <p className="mt-2">
           Die installierte App startet standardmäßig bei der Anmeldung und bereitet
-          den gewählten Modus vor. Das Mikrofon bleibt aus. Der Autostart lässt sich
+          den gewählten Modus vor. Bei aktivierter Sprachaktivierung hört die lokale
+          Erkennung auf deinen Startbefehl. Der Autostart lässt sich
           im Tray abschalten; macOS kann eine zusätzliche Freigabe verlangen.
           Windows und die echte Anmeldung auf beiden Systemen müssen noch manuell getestet werden.
         </p>

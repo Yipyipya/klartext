@@ -38,7 +38,7 @@ npm test        # Regressionstests ohne kostenpflichtige API-Aufrufe
 Die App ist statisch und braucht keine Datenbank. Im Qualitätsmodus hinterlegt
 der Nutzer seinen eigenen OpenAI-API-Key direkt in den Einstellungen. Er wird
 nur im lokalen Browserspeicher dieses Geräts gespeichert.
-Die bestehende Website ist https://klartext-adapt-learn.vercel.app und wird über
+Die bestehende Website ist https://klartext-ai.vercel.app und wird über
 das GitHub-Projekt `Yipyipya/klartext` auf Vercel aktualisiert. `noindex` bittet
 Suchmaschinen, sie nicht zu indexieren. Dies ist kein Zugriffsschutz: Jeder mit
 dem Link kann die Seite öffnen. API-Key und Verlauf sind pro Browser/Adresse
