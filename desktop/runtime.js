@@ -1,9 +1,16 @@
 const path = require("path");
 const MAX_LOG_BYTES = 1_000_000;
 
+// Electron legt den Standard-Profilordner schon vor dem ersten Main-Code an.
+// Ein Profil gilt daher erst mit gespeicherten Einstellungen als vorhanden,
+// sonst würde ein leerer Nivune-Ordner das bestehende Klartext-Profil verdrängen.
+function hasProfileData(fs, profilePath) {
+  return Boolean(fs?.existsSync?.(path.join(profilePath, "settings.json")));
+}
+
 function firstExistingProfile(fs, preferredPath, legacyPath) {
-  if (fs?.existsSync?.(preferredPath)) return preferredPath;
-  if (fs?.existsSync?.(legacyPath)) return legacyPath;
+  if (hasProfileData(fs, preferredPath)) return preferredPath;
+  if (hasProfileData(fs, legacyPath)) return legacyPath;
   return preferredPath;
 }
 

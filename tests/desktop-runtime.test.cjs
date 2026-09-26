@@ -99,7 +99,10 @@ test("Installierte App verwendet das Nivune-Profil und den gewohnten Shortcut", 
 });
 
 test("Bestehende Klartext-Profile einschließlich Modellcache bleiben ohne Kopie nutzbar", () => {
-  const existing = new Set(["/profile/klartext-desktop", "/profile/Klartext Alpha"]);
+  const existing = new Set([
+    "/profile/klartext-desktop", "/profile/klartext-desktop/settings.json",
+    "/profile/Klartext Alpha", "/profile/Klartext Alpha/settings.json",
+  ]);
   const fakeFs = { existsSync: (target) => existing.has(target) };
 
   const packaged = mockRuntimeApp(true);
@@ -109,6 +112,35 @@ test("Bestehende Klartext-Profile einschließlich Modellcache bleiben ohne Kopie
   const alpha = mockRuntimeApp(true);
   configureRuntime(alpha, "darwin", {}, false, true, fakeFs);
   assert.equal(alpha.currentUserData(), "/profile/Klartext Alpha");
+});
+
+test("von Electron vorab angelegter leerer Nivune-Ordner verdrängt das Klartext-Profil nicht", () => {
+  // Electron erzeugt den Standardordner bereits vor dem ersten Main-Code.
+  // Maßgeblich ist deshalb, ob ein Profil Nivune-Daten enthält.
+  const existing = new Set([
+    "/profile/nivune-desktop",
+    "/profile/Nivune Alpha",
+    "/profile/klartext-desktop",
+    "/profile/klartext-desktop/settings.json",
+    "/profile/Klartext Alpha",
+    "/profile/Klartext Alpha/settings.json",
+  ]);
+  const fakeFs = { existsSync: (target) => existing.has(target) };
+  const packaged = mockRuntimeApp(true);
+  configureRuntime(packaged, "darwin", {}, false, false, fakeFs);
+  assert.equal(packaged.currentUserData(), "/profile/klartext-desktop");
+  const alpha = mockRuntimeApp(true);
+  configureRuntime(alpha, "darwin", {}, false, true, fakeFs);
+  assert.equal(alpha.currentUserData(), "/profile/Klartext Alpha");
+
+  existing.add("/profile/nivune-desktop/settings.json");
+  const migrated = mockRuntimeApp(true);
+  configureRuntime(migrated, "darwin", {}, false, false, fakeFs);
+  assert.equal(migrated.currentUserData(), "/profile/nivune-desktop", "ein genutztes Nivune-Profil hat Vorrang");
+
+  const fresh = mockRuntimeApp(true);
+  configureRuntime(fresh, "darwin", {}, false, false, { existsSync: (target) => target === "/profile/nivune-desktop" });
+  assert.equal(fresh.currentUserData(), "/profile/nivune-desktop", "ohne Altprofil bleibt es beim Nivune-Ordner");
 });
 
 test("EPIPE eines geschlossenen Terminals wird behandelt statt den Main-Prozess zu beenden", () => {
@@ -535,4 +567,12 @@ test("Paketierter Modell-Smoke nutzt nur ein isoliertes Profil und gesperrtes Ne
 test("Desktop räumt globale Shortcuts nur nach vollständigem Electron-Start auf", () => {
   const mainSource = fs.readFileSync(path.join(__dirname, "../desktop/main.js"), "utf8");
   assert.match(mainSource, /app\.on\("will-quit", \(\) => \{[\s\S]*?if \(app\.isReady\(\)\) globalShortcut\.unregisterAll\(\);\s*\}\);/);
+});
+
+test("nicht entschlüsselbare übernommene Keys gelten als fehlend statt als gespeichert", () => {
+  const main = fs.readFileSync(path.join(__dirname, "../desktop/main.js"), "utf8");
+  assert.match(main, /unreadableCredentials\.set\(provider, encrypted\)/);
+  assert.match(main, /function hasStoredKey\(provider\)/);
+  assert.doesNotMatch(main, /Boolean\(settings\.[a-zA-Z]+KeyEnc\)/, "Statusanzeigen verwenden hasStoredKey");
+  assert.match(main, /settings\.mode === "quality"\) \{[\s\S]{0,300}getProviderKey\(settings\.transcriptionProvider/);
 });

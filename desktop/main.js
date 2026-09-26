@@ -367,26 +367,39 @@ function encryptedCredential(provider = "openai") {
   return settings?.openaiKeyEnc || null;
 }
 
+// Keys, die das Betriebssystem nicht mehr entschlüsseln kann (etwa ein von der
+// früheren Klartext-App gespeicherter Key), gelten als fehlend statt als gespeichert.
+const unreadableCredentials = new Map();
+
 function getProviderKey(provider = "openai") {
   const encrypted = encryptedCredential(provider);
   if (!encrypted) return null;
   const cached = credentialCache.get(provider);
   if (cached?.encrypted === encrypted) return cached.value;
+  if (unreadableCredentials.get(provider) === encrypted) return null;
   try {
     // safeStorage touches the macOS Keychain. Resolve it only when an encrypted
     // credential is actually needed so a fully local setup stays Keychain-free.
     const value = electron.safeStorage.decryptString(Buffer.from(encrypted, "base64"));
     credentialCache.set(provider, { encrypted, value });
+    unreadableCredentials.delete(provider);
     return value;
-  } catch {
+  } catch (error) {
+    unreadableCredentials.set(provider, encrypted);
+    logError(`Gespeicherter ${provider}-Key ist nicht entschlüsselbar und muss neu hinterlegt werden`, error?.message || "");
     return null;
   }
 }
 
+function hasStoredKey(provider) {
+  const encrypted = encryptedCredential(provider);
+  return Boolean(encrypted) && unreadableCredentials.get(provider) !== encrypted;
+}
+
 function qualitySetupIssue() {
   const provider = settings.transcriptionProvider || "openai";
-  if (provider === "openai" && !settings.openaiKeyEnc) return { type: "key", provider, message: "OpenAI API-Key fehlt" };
-  if (provider === "groq" && !settings.groqKeyEnc) return { type: "key", provider, message: "Groq API-Key fehlt" };
+  if (provider === "openai" && !hasStoredKey("openai")) return { type: "key", provider, message: "OpenAI API-Key fehlt" };
+  if (provider === "groq" && !hasStoredKey("groq")) return { type: "key", provider, message: "Groq API-Key fehlt" };
   if (provider === "groq" && !settings.groqModel?.trim()) return { type: "settings", provider, message: "Groq-Modell fehlt" };
   if (provider === "openai-compatible") {
     if (!sharedCore.normalizeCompatibleBaseUrl(settings.compatibleTranscriptionBaseUrl || "")) return { type: "settings", provider, message: "Sichere Server-Adresse fehlt" };
@@ -397,7 +410,7 @@ function qualitySetupIssue() {
 
 function refinementSetupIssue() {
   if (settings.cleanup === "aus" || ["none", "deterministic", "ollama"].includes(settings.refinementProvider)) return null;
-  if (settings.refinementProvider === "openai" && !settings.openaiKeyEnc) {
+  if (settings.refinementProvider === "openai" && !hasStoredKey("openai")) {
     return { type: "key", provider: "openai", message: "OpenAI API-Key fehlt" };
   }
   if (settings.refinementProvider === "openai-compatible") {
@@ -938,6 +951,7 @@ ipcMain.on("save-api-key", (_e, input) => {
   if (trimmed && electron.safeStorage.isEncryptionAvailable()) {
     settings[field] = electron.safeStorage.encryptString(trimmed).toString("base64");
     credentialCache.set(provider, { encrypted: settings[field], value: trimmed });
+    unreadableCredentials.delete(provider);
   } else {
     settings[field] = null;
     credentialCache.delete(provider);
@@ -974,11 +988,11 @@ function settingsSnapshot() {
     compatibleRefinementModel: settings.compatibleRefinementModel,
     context: settings.context, theme: settings.theme || "system",
     voiceActivation: settings.voiceActivation,
-    hasKey: Boolean(settings.openaiKeyEnc),
-    hasOpenAIKey: Boolean(settings.openaiKeyEnc),
-    hasGroqKey: Boolean(settings.groqKeyEnc),
-    hasCompatibleTranscriptionKey: Boolean(settings.compatibleTranscriptionKeyEnc),
-    hasCompatibleRefinementKey: Boolean(settings.compatibleRefinementKeyEnc),
+    hasKey: hasStoredKey("openai"),
+    hasOpenAIKey: hasStoredKey("openai"),
+    hasGroqKey: hasStoredKey("groq"),
+    hasCompatibleTranscriptionKey: hasStoredKey("openai-compatible"),
+    hasCompatibleRefinementKey: hasStoredKey("openai-compatible-refinement"),
     login: SMOKE_TEST ? { supported: false, enabled: false, detail: localizedRuntimeText("In der isolierten Vorschau deaktiviert.") } : { ...loginState, detail: localizedRuntimeText(loginState.detail) },
     wakeModelsAvailable,
     wakePhrase,
@@ -1216,9 +1230,9 @@ function onboardingSnapshot() {
     localRuntimeReady: localRuntimeStatus.ready,
     setupReady: !issue,
     setupIssue: issue ? localizedRuntimeText(issue) : null,
-    hasProviderKey: ONBOARDING_PREVIEW ? provider !== "local" : provider === "openai" ? Boolean(settings.openaiKeyEnc)
-      : provider === "groq" ? Boolean(settings.groqKeyEnc)
-        : provider === "openai-compatible" ? Boolean(settings.compatibleTranscriptionKeyEnc) : false,
+    hasProviderKey: ONBOARDING_PREVIEW ? provider !== "local" : provider === "openai" ? hasStoredKey("openai")
+      : provider === "groq" ? hasStoredKey("groq")
+        : provider === "openai-compatible" ? hasStoredKey("openai-compatible") : false,
     compatibleBaseUrl: settings.compatibleTranscriptionBaseUrl || "",
     compatibleModel: settings.compatibleTranscriptionModel || "",
     sample: previewSample,
@@ -2805,6 +2819,11 @@ app.whenReady().then(async () => {
   }
   nativeTheme.themeSource = ["system", "light", "dark"].includes(settings.theme) ? settings.theme : "system";
   logError("Nivune-App gestartet", `Version ${app.getVersion()}`);
+  if (!SMOKE_TEST && settings.mode === "quality") {
+    // Nur im Cloud-Modus: früh erkennen, ob ein übernommener Key noch lesbar ist,
+    // damit Einrichtung und Einstellungen nicht fälschlich „gespeichert“ zeigen.
+    getProviderKey(settings.transcriptionProvider || "openai");
+  }
   if (!SMOKE_TEST && onboardingState.completed) {
     loginState = configureCurrentLogin();
     saveSettings(settings);
