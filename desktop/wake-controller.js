@@ -1,6 +1,6 @@
 (function exposeWakeController(root) {
-  const START_LABEL = "Hey Klartext";
-  const STOP_LABEL = "Klartext fertig";
+  const START_LABEL = "Diktat starten";
+  const STOP_LABEL = "Diktat fertig";
   const START_CONFIRM_QUIET_MS = 250;
   const START_LEAD_IN_QUIET_MS = 150;
   const CANDIDATE_TIMEOUT_MS = 2_000;
@@ -32,7 +32,7 @@
 
   function stripTrailingStopCommand(text) {
     return String(text || "")
-      .replace(/(?:\s*["'„“”]?Klartext[\s,.-]+fertig["'„“”]?[.!?…]*)+\s*$/iu, "")
+      .replace(/(?:\s*["'„“”]?(?:Diktat|Klartext)[\s,.-]+fertig["'„“”]?[.!?…]*)+\s*$/iu, "")
       .trimEnd();
   }
 
@@ -102,5 +102,5 @@
     createCommandGate,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
-  if (root) root.KlartextWakeController = api;
+  if (root) root.NivuneWakeController = api;
 })(typeof window !== "undefined" ? window : null);

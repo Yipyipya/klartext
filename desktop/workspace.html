@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Nivune</title>
+  <link rel="stylesheet" href="resonanz.css">
+</head>
+<body class="workspace">
+  <header class="titlebar">
+    <div class="brand"><span class="voice-mark" aria-hidden="true"><i></i><i></i><i></i></span>Nivune</div>
+    <span id="workspace-status">Wird vorbereitet …</span>
+  </header>
+  <div class="workspace-layout">
+    <nav class="workspace-navigation" aria-label="Arbeitsbereiche">
+      <button data-page="dictation" aria-current="page"><span aria-hidden="true">⌁</span>Diktat</button>
+      <button data-page="recordings" aria-current="false"><span aria-hidden="true">●</span>Aufnahmen</button>
+      <button data-page="files" aria-current="false"><span aria-hidden="true">▱</span>Dateien</button>
+      <button data-page="history" aria-current="false"><span aria-hidden="true">↶</span>Verlauf</button>
+      <p class="version" id="workspace-version">Nivune Desktop</p>
+    </nav>
+    <main class="workspace-content">
+      <section data-panel="dictation">
+        <p class="eyebrow">Diktat</p>
+        <h1>Gedanken direkt dort einfügen, wo du schreibst.</h1>
+        <p class="workspace-intro">Das kleine Aufnahmefenster bleibt unabhängig von diesem Arbeitsbereich und gibt den Fokus an deine Ziel-App zurück.</p>
+        <div class="flow" aria-label="Aktueller Datenfluss">
+          <div><small>Audio</small><strong id="audio-flow">Wird geladen …</strong></div>
+          <span aria-hidden="true">→</span>
+          <div><small>Textüberarbeitung</small><strong id="refinement-flow">Wird geladen …</strong></div>
+        </div>
+        <div class="workspace-actions">
+          <button class="primary" id="start-dictation" data-action="start-dictation">Systemweit diktieren</button>
+          <button data-action="open-settings">Einstellungen</button>
+          <span>oder <kbd id="workspace-shortcut">…</kbd></span>
+        </div>
+      </section>
+
+      <section data-panel="recordings" hidden>
+        <p class="eyebrow">Aufnahmen</p>
+        <h1>Längere Gedanken in Ruhe aufnehmen.</h1>
+        <p class="workspace-intro">Eine Aufnahme zur Zeit. Pause und Fortsetzen verändern den festgehaltenen Anbieter, das Modell oder dein Wörterbuch nicht.</p>
+        <div class="capture-card" id="capture-card">
+          <div class="capture-state"><span class="voice-mark" aria-hidden="true"><i></i><i></i><i></i></span><div><strong id="capture-label">Bereit für eine Aufnahme</strong><small id="capture-detail">Die Sprachaktivierung pausiert während Aufnahme und Verarbeitung.</small></div><time id="capture-time">0:00</time></div>
+          <div class="workspace-actions capture-actions">
+            <button class="primary" id="start-recording" data-action="start-recording">Aufnahme starten</button>
+            <button id="pause-recording" data-action="pause-recording" hidden>Pause</button>
+            <button id="resume-recording" data-action="resume-recording" hidden>Fortsetzen</button>
+            <button id="stop-recording" data-action="stop-recording" hidden>Aufnahme verarbeiten</button>
+            <button id="cancel-recording" data-action="cancel-recording" hidden>Verwerfen</button>
+          </div>
+        </div>
+        <div class="recording-storage">
+          <div>
+            <strong>Lokale Audio-Arbeitskopien</strong>
+            <small>Während der Aufnahme speichert Nivune etwa alle fünf Sekunden ein Fragment unter <span id="recording-storage-label">Nivune-Profil/workspace-recordings</span>. Nach erfolgreicher Verarbeitung wird die Arbeitskopie standardmäßig gelöscht.</small>
+          </div>
+          <label class="retention-choice"><input id="retain-audio" type="checkbox"> Audio erfolgreicher Aufnahmen dauerhaft behalten</label>
+          <button type="button" data-action="show-recording-storage" id="show-recording-storage">Speicherort öffnen</button>
+        </div>
+        <div class="recovery-list" id="recovery-list" aria-label="Wiederherstellbare Audio-Arbeitskopien"></div>
+        <div class="job-list" data-job-list data-source="recording" aria-label="Aufnahme-Ergebnisse"></div>
+      </section>
+
+      <section data-panel="files" hidden>
+        <p class="eyebrow">Dateien</p>
+        <h1>Audio aus einer Datei verarbeiten.</h1>
+        <p class="workspace-intro">Nivune prüft Typ, Dateisignatur und Größenlimit im Main-Prozess. Aufträge laufen bewusst nacheinander.</p>
+        <div class="workspace-actions file-actions">
+          <button class="primary" id="import-file" data-action="import-file">Audiodatei auswählen</button>
+          <span id="queue-summary">Keine Aufträge</span>
+        </div>
+        <div class="job-list" data-job-list data-source="file" aria-label="Datei-Aufträge"></div>
+      </section>
+
+      <section data-panel="history" hidden>
+        <p class="eyebrow">Verlauf</p>
+        <h1>Deine Texte bleiben auf deinem Gerät.</h1>
+        <p class="workspace-intro">Aufnahmen und Datei-Ergebnisse werden standardmäßig ohne Audio lokal gespeichert. Nur nach ausdrücklicher Auswahl bleibt das Audio erfolgreicher Aufnahmen erhalten. Rohtext und nutzbare Teilergebnisse bleiben auch bei einem fehlgeschlagenen Feinschliff verfügbar.</p>
+        <div class="history-toolbar">
+          <label for="history-search"><span>Verlauf durchsuchen</span><input id="history-search" type="search" autocomplete="off" placeholder="Text, Datei, Anbieter oder Modell"></label>
+          <small id="history-summary">Keine Einträge</small>
+        </div>
+        <div class="history-list" id="history-list" aria-label="Lokaler Verlauf"></div>
+        <div class="history-data">
+          <div><strong>Einstellungen übertragen</strong><small>Der Export enthält keine API-Schlüssel. Importierte Netzwerkziele werden nicht automatisch aktiviert.</small></div>
+          <div class="history-data-actions">
+            <button type="button" data-action="export-settings">Einstellungen exportieren</button>
+            <button type="button" data-action="import-settings">Einstellungen importieren</button>
+            <button type="button" class="danger" id="clear-history">Gesamten Verlauf löschen</button>
+          </div>
+        </div>
+      </section>
+      <p class="feedback" id="workspace-feedback" role="status" aria-live="polite"></p>
+    </main>
+  </div>
+  <script src="i18n-renderer.js"></script>
+  <script src="workspace-renderer.js"></script>
+</body>
+</html>

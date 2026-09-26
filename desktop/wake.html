@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="de">
-<head><meta charset="utf-8" /></head>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'none'; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
+</head>
 <body>
   <script src="wake-controller.js"></script>
   <script src="wake-bundle.js"></script>

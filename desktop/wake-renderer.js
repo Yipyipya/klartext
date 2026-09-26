@@ -6,7 +6,7 @@ import rustpotterInit, {
   VADMode,
 } from "rustpotter-web-slim";
 
-const commandGate = window.KlartextWakeController.createCommandGate();
+const commandGate = window.NivuneWakeController.createCommandGate();
 let detector = null;
 let audioContext = null;
 let mediaStream = null;
@@ -26,7 +26,7 @@ let quietBeforeCurrentSpeechMs = Number.POSITIVE_INFINITY;
 function describeError(error) {
   const message = String(error?.message || error || "Unbekannter Wake-Word-Fehler");
   if (/NotAllowed|Permission|denied|Mikrofon/i.test(message)) {
-    return "Mikrofonzugriff für Klartext erlauben";
+    return "Mikrofonzugriff für Nivune erlauben";
   }
   if (/wakeword|model|Sprachmodell/i.test(message)) {
     return "Sprachmodell bitte neu einlernen";
@@ -42,7 +42,7 @@ function decodeBase64(base64) {
 }
 
 function createDetectorConfig(sampleRate, recording) {
-  const sensitivity = window.KlartextWakeController.detectionSensitivity(recording);
+  const sensitivity = window.NivuneWakeController.detectionSensitivity(recording);
   const config = RustpotterConfig.new();
   config.setSampleRate(sampleRate);
   config.setSampleFormat(SampleFormat.f32);
@@ -99,15 +99,15 @@ function handleDetection(value) {
   } finally {
     value.free();
   }
-  const action = window.KlartextWakeController.keywordAction(
+  const action = window.NivuneWakeController.keywordAction(
     detection.name === "start"
-      ? window.KlartextWakeController.START_LABEL
+      ? window.NivuneWakeController.START_LABEL
       : detection.name === "stop"
-        ? window.KlartextWakeController.STOP_LABEL
+        ? window.NivuneWakeController.STOP_LABEL
         : detection.name,
     commandGate.isRecording()
   );
-  if (action !== "ignore" && !window.KlartextWakeController.hasRequiredLeadIn(action, quietBeforeCurrentSpeechMs)) {
+  if (action !== "ignore" && !window.NivuneWakeController.hasRequiredLeadIn(action, quietBeforeCurrentSpeechMs)) {
     window.klartextWake.candidate(action, "rejected", detection);
     return;
   }
@@ -254,7 +254,7 @@ async function configure(config) {
     quietStartedAt = Date.now();
     quietBeforeCurrentSpeechMs = Number.POSITIVE_INFINITY;
     confirmationTimer = setInterval(observeCommandConfirmation, 50);
-    window.klartextWake.status("ready", "Bereit für „Hey Klartext“");
+    window.klartextWake.status("ready", `Bereit für „${config.phrase || "Diktat starten"}“`);
   } catch (error) {
     if (currentGeneration !== generation) return;
     wasmReadyPromise = null;

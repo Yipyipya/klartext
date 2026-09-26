@@ -13,10 +13,29 @@ const {
 } = require("../desktop/wake-controller");
 const {
   WAKE_MODEL_SPECS,
+  WAKE_PHRASE_METADATA_FILE,
   loadEnrolledWakeModels,
   saveEnrolledWakeModels,
   removeEnrolledWakeModels,
 } = require("../desktop/wake-runtime");
+const {
+  DEFAULT_WAKE_PHRASE,
+  DEFAULT_WAKE_PHRASE_ENGLISH,
+  LEGACY_WAKE_PHRASE,
+  defaultWakePhrase,
+  normalizeWakePhrase,
+} = require("../desktop/wake-phrase");
+
+test("Persönliche Startbefehle sind sprachunabhängig, kurz und sicher begrenzt", () => {
+  assert.equal(defaultWakePhrase("de"), DEFAULT_WAKE_PHRASE);
+  assert.equal(defaultWakePhrase("en"), DEFAULT_WAKE_PHRASE_ENGLISH);
+  assert.equal(normalizeWakePhrase("  Hello   Nivune  "), "Hello Nivune");
+  assert.equal(normalizeWakePhrase("Los geht’s"), "Los geht’s");
+  assert.equal(normalizeWakePhrase("Bonjour à tous"), "Bonjour à tous");
+  for (const invalid of ["Nivune", "eins zwei drei vier fünf sechs", "Hey <script>", "a".repeat(41)]) {
+    assert.equal(normalizeWakePhrase(invalid), "");
+  }
+});
 
 test("Nur der Startbefehl löst eine Aktion aus", () => {
   assert.equal(keywordAction(START_LABEL, false), "start");
@@ -35,15 +54,15 @@ test("Während einer Aufnahme wird die Startempfindlichkeit nicht gelockert", ()
 
 test("Erkannter Endbefehl wird nur am Textende entfernt", () => {
   assert.equal(
-    stripTrailingStopCommand("Das ist der fertige Text. Klartext fertig."),
+    stripTrailingStopCommand("Das ist der fertige Text. Diktat fertig."),
     "Das ist der fertige Text."
   );
   assert.equal(
-    stripTrailingStopCommand("Ich erkläre, warum Klartext fertig manchmal schwierig ist."),
-    "Ich erkläre, warum Klartext fertig manchmal schwierig ist."
+    stripTrailingStopCommand("Ich erkläre, warum Diktat fertig manchmal schwierig ist."),
+    "Ich erkläre, warum Diktat fertig manchmal schwierig ist."
   );
   assert.equal(
-    stripTrailingStopCommand("Der Text ist fertig. Klartext fertig. Klartext fertig."),
+    stripTrailingStopCommand("Der Text ist fertig. Diktat fertig. Klartext fertig."),
     "Der Text ist fertig."
   );
 });
@@ -91,18 +110,38 @@ test("Persönliche Sprachmodelle werden lokal gespeichert und wieder geladen", a
       files.set(filePath, Buffer.from(data));
       writes.push({ filePath, options });
     },
+    async rename(from, to) {
+      files.set(to, files.get(from));
+      files.delete(from);
+    },
   };
 
   const supplied = WAKE_MODEL_SPECS.map((spec, index) => ({
     key: spec.key,
+    label: "Hello Nivune",
     base64: Buffer.alloc(2_000, index + 1).toString("base64"),
   }));
   const saved = await saveEnrolledWakeModels({ fsPromises, modelDir: "/models", models: supplied });
   const loaded = await loadEnrolledWakeModels({ fsPromises, modelDir: "/models" });
 
-  assert.equal(writes.length, 1);
+  assert.equal(writes.length, 2);
   assert.equal(writes.every((write) => write.options.mode === 0o600), true);
   assert.deepEqual(loaded, saved);
+  assert.equal(loaded[0].label, "Hello Nivune");
+  assert.equal(files.has(`/models/${WAKE_PHRASE_METADATA_FILE}`), true);
+});
+
+test("Bestehende Modelle ohne Phrasenmetadatei bleiben Hey-Klartext-kompatibel", async () => {
+  const loaded = await loadEnrolledWakeModels({
+    modelDir: "/models",
+    fsPromises: {
+      async readFile(filePath) {
+        if (filePath.endsWith("hey-klartext.rpw")) return Buffer.alloc(2_000, 1);
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+    },
+  });
+  assert.equal(loaded[0].label, LEGACY_WAKE_PHRASE);
 });
 
 test("Fehlende oder ungültige Sprachmodelle aktivieren den Listener nicht", async () => {
@@ -117,7 +156,7 @@ test("Fehlende oder ungültige Sprachmodelle aktivieren den Listener nicht", asy
       fsPromises,
       modelDir: "/models",
       models: [
-        { key: "start", base64: "zu-klein" },
+        { key: "start", label: DEFAULT_WAKE_PHRASE, base64: "zu-klein" },
       ],
     }),
     /Ungültig/
@@ -135,5 +174,5 @@ test("Persönliche Sprachmodelle lassen sich vollständig entfernen", async () =
       },
     },
   });
-  assert.equal(removed.length, 2);
+  assert.equal(removed.length, 5);
 });

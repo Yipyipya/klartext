@@ -2,17 +2,18 @@
 <html lang="de">
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline' 'self'; worker-src 'self' blob:; connect-src 'self'; media-src 'self' blob:;" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline' 'self'; worker-src 'self' blob:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
 <link rel="stylesheet" href="resonanz.css">
 </head>
 <body class="utility">
   <main class="shell">
     <p class="eyebrow">Freihändig diktieren</p>
     <h1>Persönlicher Startbefehl</h1>
-    <p class="intro">Kein Konto und kein API-Key. Klartext lernt „Hey Klartext“ einmal direkt auf diesem Gerät. Das Diktat endet nach neun Sekunden Stille oder sofort über den globalen Shortcut.</p>
+    <p class="intro">Kein Konto und kein API-Key. Wähle einen persönlichen Startbefehl und sprich ihn fünfmal gleich ein. Das Diktat endet nach neun Sekunden Stille oder sofort über den globalen Shortcut.</p>
     <section class="card">
       <p class="step">Sprachbefehl einlernen</p>
-      <div id="phrase">„Hey Klartext“</div>
+      <label for="wake-phrase"><span>Mein Startbefehl</span><input id="wake-phrase" maxlength="40" autocomplete="off" spellcheck="false" value="Diktat starten"></label>
+      <p class="note" id="phrase-hint">Zwei bis fünf kurze Wörter funktionieren am zuverlässigsten. „Diktat starten“ ist nur ein Vorschlag.</p>
       <p id="instruction"></p>
       <div id="progress"></div>
       <div id="status" class="status">Lokale Spracherkennung wird geladen …</div>
@@ -24,8 +25,10 @@
         </div>
       </div>
     </section>
-    <p class="privacy">Die Aufnahmen und daraus erzeugten Sprachmodelle verlassen den Computer nicht. Das eigentliche Diktat nutzt weiterhin den gewählten Klartext-Transkriptionsmodus.</p>
+    <p class="privacy">Die Aufnahmen und daraus erzeugten Sprachmodelle verlassen den Computer nicht. Das eigentliche Diktat nutzt weiterhin den gewählten Nivune-Transkriptionsmodus.</p>
   </main>
+  <script src="i18n-renderer.js"></script>
+  <script src="wake-phrase.js"></script>
   <script src="wakesetup-bundle.js"></script>
 </body>
 </html>

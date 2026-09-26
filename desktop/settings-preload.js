@@ -3,6 +3,7 @@ contextBridge.exposeInMainWorld("klartextSettings", {
   read: () => ipcRenderer.invoke("settings-read"),
   update: (patch) => ipcRenderer.invoke("settings-update", patch),
   action: (name) => ipcRenderer.invoke("settings-action", name),
+  rendered: (state) => ipcRenderer.send("settings-rendered", state),
   onChanged: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on("settings-changed", listener);

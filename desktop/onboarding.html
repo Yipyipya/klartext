@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Nivune · Erste Einrichtung</title>
+  <link rel="stylesheet" href="resonanz.css">
+</head>
+<body class="onboarding">
+  <header class="titlebar">
+    <div class="brand"><span class="voice-mark" aria-hidden="true"><i></i><i></i><i></i></span>Nivune</div>
+    <span id="onboarding-version">Erste Einrichtung</span>
+  </header>
+  <main class="onboarding-shell">
+    <ol class="onboarding-progress" aria-label="Einrichtungsschritte">
+      <li><button type="button" data-go-step="1"><span>1</span>Sprache</button></li>
+      <li><button type="button" data-go-step="2"><span>2</span>Verarbeitung</button></li>
+      <li><button type="button" data-go-step="3"><span>3</span>Probe</button></li>
+      <li><button type="button" data-go-step="4"><span>4</span>Abschluss</button></li>
+    </ol>
+
+    <section class="onboarding-step" data-step="language">
+      <p class="eyebrow">Schritt 1 von 4</p>
+      <div class="interface-language">
+        <div><strong>Oberflächensprache</strong><small>Für Menüs, Hinweise und Fehlermeldungen.</small></div>
+        <div class="language-toggle" role="group" aria-label="Oberflächensprache">
+          <button type="button" data-interface-language="de">Deutsch</button>
+          <button type="button" data-interface-language="en">English</button>
+        </div>
+      </div>
+      <h1>Welche Sprache diktierst du meistens?</h1>
+      <p class="intro">Du kannst sie später jederzeit ändern. Deutsch und Englisch dürfen sich in einem Diktat mischen.</p>
+      <div class="choice-grid language-choices">
+        <button type="button" data-language="de"><strong>Deutsch</strong><small>Deutsche Sprache mit englischen Fachbegriffen</small></button>
+        <button type="button" data-language="en"><strong>English</strong><small>English speech with German names and terms</small></button>
+        <button type="button" data-language=""><strong>Automatisch</strong><small>Sprache pro Aufnahme erkennen lassen</small></button>
+      </div>
+    </section>
+
+    <section class="onboarding-step" data-step="provider" hidden>
+      <p class="eyebrow">Schritt 2 von 4</p>
+      <h1>Wo soll aus deiner Stimme Text werden?</h1>
+      <p class="intro">Nivune wechselt nie still zu einem anderen Anbieter. Für die erste Probe nutzt die Textbereinigung nur lokale Regeln.</p>
+      <div class="choice-grid provider-choices">
+        <button type="button" data-provider="local"><strong>Auf diesem Gerät</strong><small>Privat und offline nach einem einmaligen Modell-Download</small></button>
+        <button type="button" data-provider="openai"><strong>OpenAI</strong><small>Eigener API-Key · Audio wird an OpenAI gesendet</small></button>
+        <button type="button" data-provider="groq"><strong>Groq</strong><small>Eigener API-Key · Audio wird an Groq gesendet</small></button>
+        <button type="button" data-provider="openai-compatible"><strong>Eigener Server</strong><small>OpenAI-kompatibles Audioziel mit HTTPS oder lokalem Loopback</small></button>
+      </div>
+
+      <div class="setup-card" id="local-setup" hidden>
+        <div><strong>Lokales Sprachmodell</strong><small id="onboarding-model-status">Status wird geprüft …</small></div>
+        <label for="onboarding-local-model">Modell</label>
+        <select id="onboarding-local-model"><option value="genau">Whisper small · genauer</option><option value="schnell">Whisper base · schneller</option></select>
+        <div class="model-progress" id="onboarding-model-progress" hidden><i></i></div>
+        <div class="action-row"><button type="button" class="primary" data-action="model-download" id="onboarding-model-download">Modell herunterladen</button><button type="button" data-action="model-cancel" id="onboarding-model-cancel" hidden>Abbrechen</button></div>
+        <p class="note">Nur der Download benötigt Internet. Aufnahme und Transkription bleiben danach auf diesem Gerät.</p>
+      </div>
+
+      <div class="setup-card" id="cloud-setup" hidden>
+        <div><strong id="cloud-setup-title">Anbieterzugang</strong><small id="cloud-key-status">Noch nicht eingerichtet.</small></div>
+        <div id="compatible-setup" hidden>
+          <label for="onboarding-compatible-url">Server-Adresse</label>
+          <input id="onboarding-compatible-url" maxlength="500" placeholder="https://server.example/v1">
+          <label for="onboarding-compatible-model">Modell-ID</label>
+          <input id="onboarding-compatible-model" maxlength="200" placeholder="whisper-1">
+          <button type="button" data-action="save-compatible">Serverdaten speichern</button>
+        </div>
+        <div class="action-row"><button type="button" class="primary" data-action="manage-key" id="onboarding-key">Key verwalten</button></div>
+        <p class="note" id="cloud-privacy">Audio wird nur an das ausdrücklich gewählte Ziel gesendet.</p>
+      </div>
+
+      <p class="setup-status" id="setup-status" role="status"></p>
+      <div class="onboarding-actions"><button type="button" data-back="1">Zurück</button><button type="button" class="primary" data-next="3" id="provider-next">Weiter zur Probe</button></div>
+    </section>
+
+    <section class="onboarding-step" data-step="sample" hidden>
+      <p class="eyebrow">Schritt 3 von 4</p>
+      <h1>Sprich einen kurzen Probesatz.</h1>
+      <p class="intro" id="sample-intro">Erst jetzt fragt Nivune nach dem Mikrofon. Beende die Aufnahme mit <kbd id="sample-shortcut">…</kbd> oder warte nach dem Satz auf die Stille-Erkennung.</p>
+      <div class="sample-card" id="sample-card" data-state="idle">
+        <span class="voice-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div><strong id="sample-state">Bereit für die Probe</strong><small id="sample-detail">Zum Beispiel: „Das ist meine erste Nivune-Aufnahme.“</small></div>
+        <button type="button" class="primary" data-action="start-sample" id="start-sample">Probeaufnahme starten</button>
+      </div>
+      <label class="sample-result" for="sample-text" id="sample-result" hidden><span>Dein erster Text</span><textarea id="sample-text" readonly></textarea></label>
+      <button type="button" data-action="copy-sample" id="copy-sample" hidden>Text erneut kopieren</button>
+      <div class="onboarding-actions"><button type="button" data-back="2">Zurück</button><button type="button" class="primary" data-action="continue-after-sample" id="sample-next">Weiter</button></div>
+    </section>
+
+    <section class="onboarding-step" data-step="finish" hidden>
+      <p class="eyebrow">Schritt 4 von 4</p>
+      <h1>Wie soll Nivune im Alltag bereitstehen?</h1>
+      <p class="intro">Beide Hintergrundfunktionen bleiben aus, solange du sie hier nicht bewusst auswählst.</p>
+      <label class="finish-choice"><input type="checkbox" id="finish-login"><span><strong>Bei der Anmeldung starten</strong><small id="finish-login-detail">Nivune steht danach direkt über den globalen Shortcut bereit.</small></span></label>
+      <label class="finish-choice"><input type="checkbox" id="finish-voice"><span><strong>Sprachaktivierung einschalten</strong><small id="finish-voice-detail">Benötigt zuerst einen persönlichen Startbefehl.</small></span></label>
+      <button type="button" data-action="voice-setup" id="finish-voice-setup">Persönlichen Startbefehl einrichten</button>
+      <div class="clipboard-card" id="clipboard-explanation">
+        <strong>Dein Text geht nicht verloren.</strong>
+        <p id="paste-detail">Jedes fertige Diktat landet zuerst in der Zwischenablage.</p>
+        <button type="button" data-action="accessibility" id="onboarding-accessibility">Automatisches Einfügen freigeben</button>
+      </div>
+      <div class="onboarding-actions"><button type="button" data-back="3">Zurück</button><button type="button" class="primary" data-action="finish" id="finish-onboarding">Einrichtung abschließen</button></div>
+    </section>
+    <p class="feedback" id="onboarding-feedback" role="status" aria-live="polite"></p>
+  </main>
+  <script src="i18n-renderer.js"></script>
+  <script src="onboarding-renderer.js"></script>
+</body>
+</html>

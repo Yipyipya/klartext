@@ -1,32 +1,71 @@
 {
-  "name": "klartext-desktop",
-  "version": "0.3.0",
+  "name": "nivune-desktop",
+  "version": "1.0.0-beta.1",
+  "license": "MIT",
   "private": true,
-  "description": "Klartext Desktop – systemweites Diktat per globalem Shortcut, Text landet direkt an der Cursor-Position",
+  "description": "Nivune Desktop – systemweites Diktat per globalem Shortcut, Text landet direkt an der Cursor-Position",
   "main": "main.js",
   "scripts": {
+    "bundle:shared": "node build-shared.js",
+    "bundle:whisper": "node build-whisper.js",
     "bundle:wake": "node build-wake.js",
-    "prestart": "npm run bundle:wake",
+    "bundle": "npm run bundle:shared && npm run bundle:whisper && npm run bundle:wake",
+    "prestart": "npm run bundle",
     "start": "electron .",
     "icon": "node make-icon.js",
-    "predist": "npm run bundle:wake",
+    "predist": "npm run bundle",
     "dist": "electron-builder --mac dmg",
-    "predist:win": "npm run bundle:wake",
-    "dist:win": "electron-builder --win nsis --x64"
+    "predist:win": "npm run bundle",
+    "dist:win": "electron-builder --win nsis --x64",
+    "prepack:alpha": "npm run bundle",
+    "pack:alpha": "electron-builder --mac dir --arm64 --config.appId=app.nivune.desktop.alpha --config.productName=\"Nivune Alpha\" --config.directories.output=dist-alpha"
   },
   "build": {
-    "appId": "app.klartext.desktop",
-    "productName": "Klartext",
+    "appId": "app.nivune.desktop",
+    "productName": "Nivune",
     "afterPack": "adhoc-sign.js",
+    "extraResources": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "node_modules/@huggingface/transformers/LICENSE",
+        "to": "licenses/transformers-Apache-2.0.txt"
+      },
+      {
+        "from": "../third_party/onnxruntime-LICENSE.txt",
+        "to": "licenses/onnxruntime-MIT.txt"
+      },
+      {
+        "from": "node_modules/electron/LICENSE",
+        "to": "licenses/electron-MIT.txt"
+      },
+      {
+        "from": "node_modules/rustpotter-web/LICENSE",
+        "to": "licenses/rustpotter-web-Apache-2.0.txt"
+      },
+      {
+        "from": "node_modules/rustpotter-worklet/LICENSE",
+        "to": "licenses/rustpotter-worklet-Apache-2.0.txt"
+      }
+    ],
     "directories": {
       "output": "dist"
     },
     "files": [
       "main.js",
       "runtime.js",
+      "runtime-assets.js",
       "audio-runtime.js",
+      "media-permissions.js",
       "accessibility.js",
       "wake-controller.js",
+      "wake-phrase.js",
       "wake-runtime.js",
       "wake-preload.js",
       "wake-bundle.js",
@@ -42,17 +81,35 @@
       "preload.js",
       "pill.html",
       "keywin.html",
+      "keywin-renderer.js",
       "icon.png",
       "settings.html",
       "settings-preload.js",
       "settings-renderer.js",
       "settings-contract.js",
+      "settings-store.js",
+      "onboarding.html",
+      "onboarding-preload.js",
+      "onboarding-renderer.js",
+      "i18n-renderer.js",
+      "onboarding-store.js",
+      "workspace.html",
+      "workspace-preload.js",
+      "workspace-renderer.js",
+      "workspace-jobs.js",
+      "workspace-recordings.js",
+      "workspace-store.js",
+      "shared-core.cjs",
+      "whisper-bundle.js",
+      "ort-wasm-simd-threaded.asyncify.mjs",
+      "ort-wasm-simd-threaded.asyncify.wasm",
       "resonanz.css",
-      "trayTemplate@2x.png"
+      "trayTemplate@2x.png",
+      "!node_modules/**"
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "artifactName": "Klartext-Mac-AppleSilicon.${ext}",
+      "artifactName": "Nivune-Mac-AppleSilicon.${ext}",
       "target": [
         {
           "target": "dmg",
@@ -62,12 +119,26 @@
         }
       ],
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Klartext nutzt dein Mikrofon zum Diktieren.",
+        "NSMicrophoneUsageDescription": "Nivune nutzt dein Mikrofon zum Diktieren.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSIncludesSubdomains": false,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true
+            },
+            "127.0.0.1": {
+              "NSIncludesSubdomains": false,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        },
         "LSUIElement": true
       }
     },
     "win": {
-      "artifactName": "Klartext-Windows.${ext}",
+      "artifactName": "Nivune-Windows.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -84,10 +155,14 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Klartext"
+      "shortcutName": "Nivune"
     }
   },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.0"
+  },
   "devDependencies": {
+    "@electron/fuses": "2.1.3",
     "electron": "^43.1.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.25.9",

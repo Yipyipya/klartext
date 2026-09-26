@@ -2,6 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https:; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="resonanz.css">
 <style>
 :root{color-scheme:light}
@@ -31,6 +32,7 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
   </div>
 
 <script src="audio-runtime.js"></script>
+<script src="whisper-bundle.js"></script>
 <script type="module">
   const statusEl = document.getElementById("status");
   const timerEl = document.getElementById("timer");
@@ -43,77 +45,226 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
   const LIVE_MIN_S = 1.2;     // erst ab so viel Audio lostranskribieren
 
   /* ---------- Whisper laden (einmalig pro Modell, wird gecacht) ---------- */
+  const {
+    LOCAL_MODELS: MODEL_DEFINITIONS,
+    TRANSFORMERS_CACHE_KEY,
+    classifyLocalModelCacheFiles,
+    isLocalModelCacheUrl,
+    revisionAwareModelCache,
+  } = window.NivuneTransformers;
   const MODELS = {
-    genau: "onnx-community/whisper-small",
-    schnell: "onnx-community/whisper-base",
+    genau: MODEL_DEFINITIONS.genau.id,
+    schnell: MODEL_DEFINITIONS.schnell.id,
   };
   let currentModelId = MODELS.genau;
+  let interfaceLanguage = "de";
+  const t = (german, english) => interfaceLanguage === "en" ? english : german;
   let transcriberPromise = null;
   let transcriberReady = false;
-  let loadedModel = "";
+  let loadedModelKey = "";
+  let loadedBackend = "";
+  let activeModelController = null;
 
-  function getTranscriber(modelId) {
-    if (loadedModel !== modelId) {
-      transcriberPromise = null;
-      transcriberReady = false;
-      loadedModel = modelId;
+  const definitionFor = (modelId) => Object.values(MODEL_DEFINITIONS).find((model) => model.id === modelId) ?? MODEL_DEFINITIONS.genau;
+  const keyFor = (model) => `${model.id}@${model.revision}`;
+
+  async function inspectModel(modelId) {
+    const model = definitionFor(modelId);
+    if (typeof caches === "undefined") return { state: "missing", files: 0 };
+    const cache = await caches.open(TRANSFORMERS_CACHE_KEY);
+    return classifyLocalModelCacheFiles(
+      (await cache.keys()).map((request) => request.url),
+      model,
+      navigator.gpu ? "webgpu" : "wasm",
+    );
+  }
+
+  async function releaseTranscriber() {
+    const previous = await transcriberPromise?.catch(() => null);
+    transcriberPromise = null;
+    transcriberReady = false;
+    loadedModelKey = "";
+    if (previous?.dispose) await previous.dispose();
+  }
+
+  async function getTranscriber(modelId, allowDownload = false, commandId = null) {
+    const model = definitionFor(modelId);
+    const modelKey = keyFor(model);
+    if (loadedModelKey && loadedModelKey !== modelKey) {
+      activeModelController?.abort();
+      await releaseTranscriber();
     }
     if (!transcriberPromise) {
+      if (!allowDownload && (await inspectModel(model.id)).state !== "ready") throw new Error("LOCAL_MODEL_NOT_READY");
+      loadedModelKey = modelKey;
       transcriberPromise = (async () => {
-        const { pipeline } = await import(
-          "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm"
-        );
+        const { pipeline, env } = window.NivuneTransformers;
+        const resource = (name) => new URL(name, window.location.href).href;
+        env.backends.onnx.wasm.wasmPaths = {
+          mjs: resource("ort-wasm-simd-threaded.asyncify.mjs"),
+          wasm: resource("ort-wasm-simd-threaded.asyncify.wasm"),
+        };
+        const previousFetch = env.fetch;
+        const previousAllowLocalModels = env.allowLocalModels;
+        const previousUseCustomCache = env.useCustomCache;
+        const previousCustomCache = env.customCache;
+        const controller = new AbortController();
+        activeModelController = controller;
+        if (!allowDownload) env.allowLocalModels = true;
+        const compatibleCache = !allowDownload ? await revisionAwareModelCache(model) : null;
+        if (compatibleCache) {
+          env.useCustomCache = true;
+          env.customCache = compatibleCache;
+        }
+        env.fetch = (input, init = {}) => previousFetch(input, {
+          ...init,
+          signal: init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
+        });
         const progress_callback = (p) => {
-          if (p.status === "progress" && p.file?.endsWith(".onnx")) {
-            statusEl.textContent = `Modell lädt … ${Math.round(p.progress ?? 0)} %`;
+          if (p.status === "progress_total" || (p.status === "progress" && p.file?.endsWith(".onnx"))) {
+            statusEl.textContent = t(`Modell lädt … ${Math.round(p.progress ?? 0)} %`, `Downloading model … ${Math.round(p.progress ?? 0)}%`);
+            if (commandId) window.klartext.modelStatus({ id: commandId, choice: model.choice, state: "downloading", progress: Math.round(p.progress ?? 0), loaded: Number(p.loaded || 0), total: Number(p.total || 0) });
           }
         };
-        let t;
         try {
-          if (!navigator.gpu) throw new Error("kein WebGPU");
-          t = await pipeline("automatic-speech-recognition", modelId, {
-            device: "webgpu",
-            dtype: { encoder_model: "fp32", decoder_model_merged: "q4" },
-            progress_callback,
-          });
-        } catch {
-          t = await pipeline("automatic-speech-recognition", modelId, {
-            device: "wasm",
-            dtype: "q8",
-            progress_callback,
-          });
+          const common = {
+            revision: model.revision,
+            local_files_only: !allowDownload,
+            ...(allowDownload ? { progress_callback } : {}),
+          };
+          try {
+            if (!navigator.gpu) throw new Error("kein WebGPU");
+            const created = await pipeline("automatic-speech-recognition", model.id, {
+              ...common,
+              device: "webgpu",
+              dtype: { encoder_model: "fp32", decoder_model_merged: "q4" },
+            });
+            loadedBackend = "webgpu";
+            return created;
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+            // Do not restore the shared Transformers environment before the
+            // asynchronous WASM fallback has actually loaded from the cache.
+            const created = await pipeline("automatic-speech-recognition", model.id, {
+              ...common,
+              device: "wasm",
+              dtype: "q8",
+            });
+            loadedBackend = "wasm";
+            return created;
+          }
+        } finally {
+          env.fetch = previousFetch;
+          env.allowLocalModels = previousAllowLocalModels;
+          env.useCustomCache = previousUseCustomCache;
+          env.customCache = previousCustomCache;
+          if (activeModelController === controller) activeModelController = null;
         }
+      })().then((created) => {
         transcriberReady = true;
-        return t;
-      })();
+        return created;
+      });
       transcriberPromise.catch(() => {
         transcriberPromise = null;
         transcriberReady = false;
+        loadedModelKey = "";
+        loadedBackend = "";
       });
     }
     return transcriberPromise;
   }
-  // Nur im gewählten Lokalmodus vorladen. Kein Mikrofon und kein bezahlter API-Aufruf.
-  window.klartext.onPrepare(async (settings) => {
+
+  async function removeModel(modelId) {
+    const model = definitionFor(modelId);
+    activeModelController?.abort();
+    if (loadedModelKey === keyFor(model)) await releaseTranscriber();
+    if (typeof caches !== "undefined") {
+      const cache = await caches.open(TRANSFORMERS_CACHE_KEY);
+      const requests = await cache.keys();
+      await Promise.all(requests.filter((request) => isLocalModelCacheUrl(request.url, model)).map((request) => cache.delete(request)));
+    }
+    return inspectModel(model.id);
+  }
+
+  window.klartext.onModelCommand(async (command) => {
+    const choice = command?.choice === "schnell" ? "schnell" : "genau";
+    const model = MODEL_DEFINITIONS[choice];
+    if (command?.action === "cancel") {
+      activeModelController?.abort();
+      return;
+    }
     try {
-      if (settings.mode === "local") await getTranscriber(MODELS[settings.model] ?? MODELS.genau);
-      window.klartext.prepared({ ...settings, ok: true });
-    } catch {
-      window.klartext.prepared({ ...settings, ok: false });
+      if (command?.action === "download") await getTranscriber(model.id, true, command.id);
+      const state = command?.action === "remove" ? await removeModel(model.id) : await inspectModel(model.id);
+      window.klartext.modelStatus({ id: command?.id, choice, ...state });
+    } catch (error) {
+      const state = await inspectModel(model.id).catch(() => ({ state: "partial", files: 0 }));
+      window.klartext.modelStatus({ id: command?.id, choice, ...state, error: error?.name === "AbortError" ? "MODEL_DOWNLOAD_ABORTED" : String(error?.message ?? error) });
     }
   });
 
-  /* ---------- sanftes Aufräumen (wie Web-App, Stufe „sanft") ---------- */
-  const FILLER_DE = /(^|[\s,„("'-])(?:ähm+|ähh+|äh+|ehm+|öhm+|hmm+|mhm+)(?=[\s.,!?:;…)"'-]|$)/gi;
-  const FILLER_EN = /(^|[\s,("'-])(?:um+|uh+|uhm+|erm+|hmm+|mhm+)(?=[\s.,!?:;…)"'-]|$)/gi;
-  function clean(text, lang) {
-    const t = text
-      .replace(lang === "en" ? FILLER_EN : FILLER_DE, "$1")
-      .replace(/\s+([,.!?;:…])/g, "$1")
-      .replace(/\s{2,}/g, " ")
-      .trim();
-    return t.replace(/(^|[.!?…]\s+)(\p{Ll})/gu, (_m, p, c) => p + c.toUpperCase());
-  }
+  // Beim Start nur bereits vollständig gecachte Modelle laden. Ein Download
+  // beginnt ausschließlich über den sichtbaren Modellmanager.
+  window.klartext.onPrepare(async (settings) => {
+    interfaceLanguage = settings?.interfaceLanguage === "en" ? "en" : "de";
+    document.documentElement.lang = interfaceLanguage;
+    try {
+      const model = MODEL_DEFINITIONS[settings.model] ?? MODEL_DEFINITIONS.genau;
+      if (settings.mode === "local") await getTranscriber(model.id, false);
+      window.klartext.prepared({
+        ...settings,
+        ok: true,
+        ...(settings.mode === "local" ? {
+          backend: loadedBackend,
+          modelId: model.id,
+          revision: model.revision,
+          localFilesOnly: true,
+        } : {}),
+      });
+    } catch (error) {
+      window.klartext.prepared({ ...settings, ok: false, reason: String(error?.message ?? error) });
+    }
+  });
+
+  const cancelledWorkspaceRequests = new Set();
+  window.klartext.onWorkspaceLocalCancel((requestId) => cancelledWorkspaceRequests.add(String(requestId || "")));
+  window.klartext.onWorkspaceLocalTranscribe(async (request) => {
+    const requestId = String(request?.requestId || "");
+    if (!requestId) return;
+    let context = null;
+    try {
+      const bytes = request.bytes instanceof Uint8Array ? request.bytes : new Uint8Array(request.bytes || []);
+      if (!bytes.byteLength) throw new Error("AUDIO_FILE_EMPTY");
+      context = new AudioContext({ sampleRate: SAMPLE_RATE });
+      const source = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      const decoded = await context.decodeAudioData(source);
+      if (cancelledWorkspaceRequests.has(requestId)) return;
+      if (!decoded.length || !decoded.numberOfChannels) throw new Error("AUDIO_DECODE_EMPTY");
+      const mono = new Float32Array(decoded.length);
+      for (let channel = 0; channel < decoded.numberOfChannels; channel += 1) {
+        const samples = decoded.getChannelData(channel);
+        for (let index = 0; index < samples.length; index += 1) mono[index] += samples[index] / decoded.numberOfChannels;
+      }
+      const transcriber = await getTranscriber(request.model, false);
+      if (cancelledWorkspaceRequests.has(requestId)) return;
+      const output = await transcriber(mono, {
+        chunk_length_s: 30,
+        stride_length_s: 5,
+        language: request.language || undefined,
+        task: "transcribe",
+      });
+      if (cancelledWorkspaceRequests.has(requestId)) return;
+      const text = (Array.isArray(output) ? output.map((item) => item.text).join(" ") : output.text) ?? "";
+      window.klartext.workspaceLocalResult({ requestId, text: text.trim() });
+    } catch (error) {
+      if (!cancelledWorkspaceRequests.has(requestId)) {
+        window.klartext.workspaceLocalResult({ requestId, error: String(error?.message || error) });
+      }
+    } finally {
+      cancelledWorkspaceRequests.delete(requestId);
+      context?.close().catch(() => {});
+    }
+  });
 
   /* ---------- Zustand ---------- */
   let stream = null, actx = null, procNode = null;
@@ -184,7 +335,7 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
     clearInterval(timerIv);
     clearInterval(liveIv);
     timerEl.textContent = "0:00";
-    statusEl.textContent = "Aufnahme …";
+    statusEl.textContent = t("Aufnahme …", "Recording …");
     pillEl.classList.remove("processing");
     setPreview("");
   }
@@ -255,8 +406,11 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
     recordingActive = true;
     pcmChunks = [];
     totalSamples = 0;
-    silenceMonitor = window.KlartextAudioRuntime.createSilenceMonitor();
+    let limitReported = false;
+    silenceMonitor = window.NivuneAudioRuntime.createSilenceMonitor();
     currentLang = settings?.lang ?? "de";
+    interfaceLanguage = settings?.interfaceLanguage === "en" ? "en" : "de";
+    document.documentElement.lang = interfaceLanguage;
     currentMode = settings?.mode ?? "quality";
     hasOpenAIKey = Boolean(settings?.hasOpenAIKey);
     lastPreviewText = "";
@@ -273,8 +427,8 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
     } catch (error) {
       recordingActive = false;
       window.klartext.error(error?.name === "NotAllowedError"
-        ? "Kein Mikrofonzugriff. Bitte die Mikrofonberechtigung für Klartext erlauben."
-        : `Mikrofon konnte nicht geöffnet werden: ${error?.message || "unbekannter Fehler"}`);
+        ? t("Kein Mikrofonzugriff. Bitte die Mikrofonberechtigung für Nivune erlauben.", "No microphone access. Please allow microphone permission for Nivune.")
+        : t(`Mikrofon konnte nicht geöffnet werden: ${error?.message || "unbekannter Fehler"}`, `The microphone could not be opened: ${error?.message || "unknown error"}`));
       return;
     }
 
@@ -282,7 +436,7 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
       // Direkt als 16-kHz-PCM aufnehmen. AudioContext kann in einem unsichtbaren
       // Hintergrundfenster zunächst pausiert sein, deshalb explizit aktivieren.
       actx = new AudioContext({ sampleRate: SAMPLE_RATE });
-      await window.KlartextAudioRuntime.ensureAudioContextRunning(actx);
+      await window.NivuneAudioRuntime.ensureAudioContextRunning(actx);
       const src = actx.createMediaStreamSource(stream);
       const analyser = actx.createAnalyser();
       analyser.fftSize = 128;
@@ -292,13 +446,28 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
       procNode = actx.createScriptProcessor(4096, 1, 1);
       procNode.onaudioprocess = (e) => {
         if (!recordingActive) return;
-        const c = new Float32Array(e.inputBuffer.getChannelData(0));
+        const input = e.inputBuffer.getChannelData(0);
+        const remaining = window.NivuneAudioRuntime.MAX_SYSTEM_DICTATION_SAMPLES - totalSamples;
+        if (remaining <= 0) {
+          if (!limitReported) {
+            limitReported = true;
+            statusEl.textContent = t("Maximale Diktatdauer erreicht …", "Maximum dictation duration reached …");
+            window.klartext.limit();
+          }
+          return;
+        }
+        const c = new Float32Array(input.subarray(0, Math.min(input.length, remaining)));
         pcmChunks.push(c);
         totalSamples += c.length;
         let energy = 0;
         for (let index = 0; index < c.length; index += 1) energy += c[index] * c[index];
         silenceMonitor?.observeRms(Math.sqrt(energy / Math.max(1, c.length)));
         if (silenceMonitor?.shouldAutoStop()) window.klartext.silence();
+        if (totalSamples >= window.NivuneAudioRuntime.MAX_SYSTEM_DICTATION_SAMPLES && !limitReported) {
+          limitReported = true;
+          statusEl.textContent = t("Maximale Diktatdauer erreicht …", "Maximum dictation duration reached …");
+          window.klartext.limit();
+        }
       };
       const mute = actx.createGain();
       mute.gain.value = 0;
@@ -319,18 +488,18 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
     } catch (error) {
       recordingActive = false;
       stopCapture();
-      window.klartext.error(`Audioaufnahme konnte nicht gestartet werden: ${error?.message || "unbekannter Fehler"}`);
+      window.klartext.error(t(`Audioaufnahme konnte nicht gestartet werden: ${error?.message || "unbekannter Fehler"}`, `Audio recording could not be started: ${error?.message || "unknown error"}`));
     }
   });
 
   window.klartext.onProcessingStart(() => {
     pillEl.classList.add("processing");
-    statusEl.textContent = "Transkribiere …";
+    statusEl.textContent = t("Transkribiere …", "Transcribing …");
   });
 
   window.klartext.onRefiningStart(() => {
     pillEl.classList.add("processing");
-    statusEl.textContent = "Text wird geglättet …";
+    statusEl.textContent = t("Text wird geglättet …", "Refining text …");
   });
 
   window.klartext.onStop(async (options = {}) => {
@@ -342,7 +511,7 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
     stopCapture();
 
     pillEl.classList.add("processing");
-    statusEl.textContent = "Finalisiere …";
+    statusEl.textContent = t("Finalisiere …", "Finalizing …");
     try {
       // Laufenden Live-Durchlauf ausklingen lassen
       while (liveBusy) await new Promise((r) => setTimeout(r, 60));
@@ -359,9 +528,9 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
       const capturedPcm = concatPcm(0);
       const allPcm = trimSamples ? capturedPcm.subarray(0, usableSamples) : capturedPcm;
       if (currentMode === "quality" && hasOpenAIKey) {
-        statusEl.textContent = "Beste Qualität …";
+        statusEl.textContent = t("Beste Qualität …", "Best quality …");
         window.klartext.result({
-          text: clean(lastPreviewText.trim(), currentLang),
+          text: lastPreviewText.trim(),
           audio: encodeWav(allPcm),
           stopReason: options.reason,
         });
@@ -374,7 +543,7 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
           task: "transcribe",
         });
         const raw = (Array.isArray(out) ? out.map((o) => o.text).join(" ") : out.text) ?? "";
-        window.klartext.result({ text: clean(raw.trim(), currentLang), audio: null, stopReason: options.reason });
+        window.klartext.result({ text: raw.trim(), audio: null, stopReason: options.reason });
       }
     } catch (err) {
       window.klartext.error(String(err?.message ?? err));

@@ -21,7 +21,7 @@ test("Entwicklungs-App und DMG werden nicht als Autostart registriert", () => {
   app.isPackaged = false;
   assert.equal(configureLogin(app, {}, "darwin", "/dev/Electron").supported, false);
   app.isPackaged = true;
-  assert.equal(configureLogin(app, {}, "darwin", "/Volumes/Klartext/Klartext.app").supported, false);
+  assert.equal(configureLogin(app, {}, "darwin", "/Volumes/Nivune/Nivune.app").supported, false);
   assert.equal(app.calls.length, 0);
 });
 
@@ -29,9 +29,9 @@ test("Installierte App aktiviert Autostart auf Mac und Windows standardmäßig",
   for (const platform of ["darwin", "win32"]) {
     const app = mockApp();
     const settings = {};
-    assert.equal(configureLogin(app, settings, platform, "/installed/Klartext").enabled, true);
+    assert.equal(configureLogin(app, settings, platform, "/installed/Nivune").enabled, true);
     assert.deepEqual(app.calls, [{ openAtLogin: true }]);
-    assert.equal(settings.loginConfiguredPath, "/installed/Klartext");
+    assert.equal(settings.loginConfiguredPath, "/installed/Nivune");
   }
 });
 
@@ -56,6 +56,25 @@ test("macOS-Freigabe und Windows-Blockierung werden ehrlich angezeigt", () => {
 test("Tray-Aufbau entschlüsselt den API-Key nicht und blockiert den Listener-Start nicht", () => {
   const source = fs.readFileSync(path.join(__dirname, "../desktop/main.js"), "utf8");
   const traySection = source.slice(source.indexOf("function updateTray()"), source.indexOf("function createTray()"));
-  assert.doesNotMatch(traySection, /getOpenAIKey\(\)/);
-  assert.match(traySection, /settings\.openaiKeyEnc/);
+  assert.doesNotMatch(traySection, /getOpenAIKey\(\)|getProviderKey\(/);
+  assert.match(traySection, /encryptedCredential\(settings\.transcriptionProvider\)/);
+});
+
+test("Web-App setzt Sicherheitsheader und lädt die Theme-Initialisierung als lokale Datei", () => {
+  const config = fs.readFileSync(path.join(__dirname, "../next.config.ts"), "utf8");
+  for (const header of [
+    "Content-Security-Policy",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+    "Referrer-Policy",
+    "Permissions-Policy",
+  ]) assert.match(config, new RegExp(header));
+  assert.match(config, /frame-ancestors 'none'/);
+  assert.match(config, /object-src 'none'/);
+  assert.match(config, /microphone=\(self\)/);
+
+  const layout = fs.readFileSync(path.join(__dirname, "../components/site/RootDocument.tsx"), "utf8");
+  assert.match(layout, /script src="\/theme-init\.js"/);
+  assert.doesNotMatch(layout, /dangerouslySetInnerHTML/);
+  assert.equal(fs.existsSync(path.join(__dirname, "../public/theme-init.js")), true);
 });

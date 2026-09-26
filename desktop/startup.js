@@ -7,7 +7,7 @@ function configureLogin(app, settings, platform, executable, force = false) {
   try {
     const desired = settings.launchAtLogin !== false;
     // macOS kann getLoginItemSettings() beim Start minutenlang synchron
-    // blockieren. Beim normalen Start reicht der von Klartext gespeicherte
+    // blockieren. Beim normalen Start reicht der von Nivune gespeicherte
     // Zustand; eine Systemabfrage erfolgt nur nach einem bewussten Umschalten.
     if (!force) {
       if (settings.loginConfiguredPath !== executable) {

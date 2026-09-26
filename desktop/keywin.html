@@ -2,32 +2,19 @@
 <html lang="de">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="resonanz.css">
 </head>
 <body class="utility">
   <div class="eyebrow">Beste Qualität</div>
-  <h1>OpenAI verbinden</h1>
-  <p>
-    Trage deinen OpenAI API-Key ein. Er wird mithilfe des Betriebssystems verschlüsselt in der lokalen
-    Einstellungsdatei gespeichert und ausschließlich
-    für deine Transkriptionen direkt an OpenAI gesendet.
-  </p>
+  <h1 id="title">OpenAI verbinden</h1>
+  <p id="description">Trage deinen API-Key ein. Er wird mithilfe des Betriebssystems verschlüsselt und nur für den gewählten Anbieter verwendet.</p>
   <input id="key" type="password" placeholder="sk-proj-…" autocomplete="off" autofocus />
   <div class="row">
     <button class="danger" id="remove">Key entfernen</button>
     <button id="cancel">Abbrechen</button>
     <button class="primary" id="save">Speichern</button>
   </div>
-<script>
-  const input = document.getElementById("key");
-  document.getElementById("save").addEventListener("click", () => {
-    if (input.value.trim()) window.klartext.saveApiKey(input.value);
-  });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && input.value.trim()) window.klartext.saveApiKey(input.value);
-  });
-  document.getElementById("remove").addEventListener("click", () => window.klartext.saveApiKey(""));
-  document.getElementById("cancel").addEventListener("click", () => window.klartext.closeKeyWindow());
-</script>
+<script src="keywin-renderer.js"></script>
 </body>
 </html>
