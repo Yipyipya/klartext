@@ -47,6 +47,30 @@ Nahtlose Fortsetzung: [Entwicklungsübergabe](docs/DEVELOPMENT_HANDOFF.md).
   das erst die Developer-ID-Signierung (Checkliste A7).
 - 199/199 Tests; installiert ist Build aus Commit `957e54f`.
 
+### Nachtrag 26. September, lange Aufnahmen und Meeting-Videos
+
+- **Behoben, betraf auch das bestehende lokale Diktat:** Die eingebaute
+  Fensterung von Transformers.js (`chunk_length_s` + `stride`) verlor bei langen
+  Aufnahmen Text. Einstündiger Praxistest: 3.809 statt rund 9.080 Wörter. Lokales
+  Whisper (Desktop-Diktat, Arbeitsbereich, Web-Worker) nutzt jetzt eigene Fenster
+  unter 30 Sekunden mit Schnitt an der leisesten Stelle
+  (`shared/whisper-windows.ts`). Derselbe Test ergab danach 8.988 Wörter; alle
+  Abschnitte waren vorhanden, Abweichungen nur in Schreibweisen einzelner Beträge.
+- **Neu:** Desktop-Import von Audio- und Videodateien bis 1 GB und zwei Stunden.
+  Dateien werden erst bei der Verarbeitung gelesen. Für OpenAI, Groq und
+  kompatible Server werden Dateien über 24 MB zu 16-kHz-Mono dekodiert, an
+  Sprechpausen in WAV-Abschnitte geteilt und nacheinander mit Übergangskontext
+  gesendet. Lokal läuft die Verarbeitung in 5-Minuten-Abschnitten mit Fortschritt
+  und Abbruch.
+- **Nachweis mit einem einstündigen H.264/AAC-Meeting-Video (45 MB):** Tonspur in
+  8 s gelesen, 5 Cloud-Abschnitte (größter 23,3 MB); lokal offline in 731 s
+  vollständig transkribiert (whisper-small, WebGPU, 8 GB RAM); Cloud-Weg im Quell-
+  und im Paketstand gegen einen Loopback-Testserver mit 5 nacheinander gesendeten
+  Abschnitten. Kein echter OpenAI-/Groq-Aufruf (keine Kosten, kein Key genutzt).
+- 210/210 Tests, Build und Pakete grün; installiert ist Build `76c8ec3`.
+  Nach jeder Neuinstallation muss die Bedienungshilfen-Freigabe neu gesetzt werden
+  (Ad-hoc-Signatur).
+
 ## Kurzstand 23. September 2026: Kandidat 1.0.0-beta.1
 
 Alles, was ohne Entscheidungen, Zugänge, echte Geräte oder Beta-Teilnehmende
