@@ -17,14 +17,16 @@ test("Desktop-Dateiimport akzeptiert nur passende Audioendung, Signatur und Prof
   });
   assert.throws(() => validateAudioFile({ name: "memo.txt", size: 10, header: wavHeader, plan: cloudPlan }), /UNSUPPORTED_AUDIO_TYPE/);
   assert.throws(() => validateAudioFile({ name: "memo.wav", size: 10, header: Buffer.alloc(16), plan: cloudPlan }), /SIGNATURE/);
-  assert.throws(() => validateAudioFile({ name: "memo.wav", size: 24_000_001, header: wavHeader, plan: cloudPlan }), /TOO_LARGE/);
-  assert.doesNotThrow(() => validateAudioFile({ name: "memo.wav", size: 24_000_001, header: wavHeader, plan: localPlan }));
+  assert.doesNotThrow(() => validateAudioFile({ name: "meeting.wav", size: 24_000_001, header: wavHeader, plan: cloudPlan }));
+  assert.doesNotThrow(() => validateAudioFile({ name: "meeting.wav", size: 1_000_000_000, header: wavHeader, plan: localPlan }));
+  assert.throws(() => validateAudioFile({ name: "meeting.wav", size: 1_000_000_001, header: wavHeader, plan: cloudPlan }), /TOO_LARGE/);
 });
 
 test("Arbeitsbereich-Aufnahmen begrenzen Typ und Größe vor der Queue", () => {
   assert.equal(validateCapturedAudio({ byteLength: 4096, mimeType: "audio/webm;codecs=opus", plan: cloudPlan }).mimeType, "audio/webm");
   assert.throws(() => validateCapturedAudio({ byteLength: 4096, mimeType: "audio/aac", plan: cloudPlan }), /UNSUPPORTED_RECORDING_TYPE/);
-  assert.throws(() => validateCapturedAudio({ byteLength: 24_000_001, mimeType: "audio/webm", plan: cloudPlan }), /TOO_LARGE/);
+  assert.doesNotThrow(() => validateCapturedAudio({ byteLength: 24_000_001, mimeType: "audio/webm", plan: cloudPlan }));
+  assert.throws(() => validateCapturedAudio({ byteLength: 1_000_000_001, mimeType: "audio/webm", plan: cloudPlan }), /TOO_LARGE/);
 });
 
 test("Aufnahmezustand erlaubt nur Start, Pause, Fortsetzen und Abschluss in Reihenfolge", () => {

@@ -40,7 +40,10 @@ const {
   validateAudioFile,
   validateCapturedAudio,
   transitionCapture,
+  needsCloudSegmentation,
+  MAX_CLOUD_AUDIO_BYTES,
 } = require("./workspace-jobs");
+const { continuationContext } = require("./audio-segments");
 const { createWorkspaceStore, historyExport, MAX_TEXT_LENGTH } = require("./workspace-store");
 const { createWorkspaceRecordingStore, MAX_FRAGMENT_BYTES } = require("./workspace-recordings");
 const { createOnboardingStore } = require("./onboarding-store");
@@ -60,6 +63,11 @@ const ONBOARDING_TEST = process.argv.includes("--onboarding-test");
 const ONBOARDING_TEST_PROFILE = process.argv.find((value) => value.startsWith("--onboarding-test-profile="))?.split("=")[1] || "";
 const MODEL_SMOKE = process.argv.includes("--model-smoke-test");
 const MODEL_SMOKE_PROFILE = process.argv.find((value) => value.startsWith("--model-smoke-profile="))?.split("=")[1] || "";
+// Optionaler Langaudio-Nachweis im isolierten Modell-Smoke: eine Datei aus dem
+// Temp-Ordner wird geteilt und lokal transkribiert, ohne Netz und ohne Mikrofon.
+const LONG_AUDIO_SMOKE_FILE = process.argv.find((value) => value.startsWith("--long-audio-smoke="))?.split("=")[1] || "";
+// Optional: Cloud-Aufteilung gegen einen kompatiblen Loopback-Testserver prüfen.
+const LONG_AUDIO_CLOUD_URL = process.argv.find((value) => value.startsWith("--long-audio-cloud-url="))?.slice("--long-audio-cloud-url=".length) || "";
 const ONBOARDING_PREVIEW_STEP = Math.max(1, Math.min(4, Number(process.argv.find((value) => value.startsWith("--onboarding-preview-step="))?.split("=")[1]) || 4));
 const SMOKE_TEST = process.argv.includes("--smoke-test") || SETTINGS_PREVIEW || SETTINGS_SMOKE
   || WORKSPACE_PREVIEW || WORKSPACE_SMOKE || ONBOARDING_PREVIEW || ONBOARDING_SMOKE || MODEL_SMOKE;
@@ -143,6 +151,7 @@ let workspaceQueue = null;
 let workspaceJobSequence = 0;
 let workspaceLocalSequence = 0;
 const workspaceLocalRequests = new Map();
+const workspaceSegmentRequests = new Map();
 const workspacePersistedJobIds = new Set();
 let onboardingState = { schemaVersion: 1, completed: false, step: 1, sampleCompleted: false, completedAt: null };
 let onboardingSample = { state: "idle", text: "", error: null };
@@ -1546,11 +1555,11 @@ function workspaceAudioError(error, plan) {
   if (code === "AUDIO_FILE_EMPTY" || code === "AUDIO_RECORDING_EMPTY") return new Error("Die Aufnahme oder Audiodatei ist leer.");
   if (code === "UNSUPPORTED_RECORDING_TYPE") return new Error("Dieses Aufnahmeformat wird nicht unterstützt.");
   if (code === "WORKSPACE_QUEUE_FULL") return new Error("Die Warteschlange ist voll. Bitte warte oder brich einen Auftrag ab.");
-  if (code === "AUDIO_FILE_TOO_LARGE") {
-    return new Error(plan?.transcription?.provider === "local"
-      ? "Lokale Dateien dürfen in diesem Schritt höchstens 100 MB groß sein."
-      : "Cloud-Aufträge dürfen in diesem Schritt höchstens 24 MB groß sein.");
-  }
+  if (code === "AUDIO_FILE_TOO_LARGE") return new Error(uiText("Dateien dürfen höchstens 1 GB groß sein.", "Files may be at most 1 GB."));
+  if (code === "AUDIO_TOO_LONG") return new Error(uiText("Bitte Aufnahmen bis zu zwei Stunden verwenden oder die Datei vorher teilen.", "Please use recordings of up to two hours or split the file first."));
+  if (code === "AUDIO_DECODE_FAILED" || code === "AUDIO_DECODE_EMPTY") return new Error(uiText("Die Tonspur dieser Datei konnte nicht gelesen werden. Bitte als M4A, MP3 oder WAV exportieren.", "The audio track of this file could not be read. Please export it as M4A, MP3, or WAV."));
+  if (code === "AUDIO_SEGMENT_INVALID") return new Error(uiText("Die Datei konnte nicht in Abschnitte geteilt werden.", "The file could not be split into sections."));
+  if (code === "AUDIO_FILE_CHANGED") return new Error(uiText("Die Datei wurde seit dem Import verändert oder verschoben. Bitte erneut importieren.", "The file was changed or moved since import. Please import it again."));
   return error instanceof Error ? error : new Error(code);
 }
 
@@ -1568,9 +1577,13 @@ function requestWorkspaceLocalTranscription(job, signal, update) {
     workspaceLocalRequests.set(requestId, {
       resolve: (text) => { signal.removeEventListener("abort", abort); resolve(text); },
       reject: (error) => { signal.removeEventListener("abort", abort); reject(error); },
+      progress: (current, total) => {
+        job.progress = { current, total };
+        update("transcribing");
+      },
     });
     update("transcribing");
-    const bytes = Uint8Array.from(job.bytes);
+    const bytes = new Uint8Array(job.bytes.buffer, job.bytes.byteOffset, job.bytes.byteLength);
     pill.webContents.send("workspace-local-transcribe", {
       requestId,
       bytes,
@@ -1579,6 +1592,98 @@ function requestWorkspaceLocalTranscription(job, signal, update) {
       model: job.context.plan.transcription.model,
     });
   });
+}
+
+// Lässt den Audio-Renderer eine lange Datei in WAV-Abschnitte unter der
+// Anbietergrenze teilen. Liefert die Abschnitte in Reihenfolge.
+function requestWorkspaceAudioSegments(job, maxBytes, signal) {
+  if (!pill || !pillReady) return Promise.reject(new Error("Audioverarbeitung ist noch nicht bereit."));
+  const requestId = `segments-${++workspaceLocalSequence}`;
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      workspaceSegmentRequests.delete(requestId);
+      signal.removeEventListener("abort", abort);
+    };
+    const abort = () => {
+      cleanup();
+      pill?.webContents.send("workspace-local-cancel", requestId);
+      reject(new DOMException("Abgebrochen", "AbortError"));
+    };
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    const received = [];
+    workspaceSegmentRequests.set(requestId, (payload) => {
+      if (payload.error) {
+        cleanup();
+        reject(new Error(String(payload.error).slice(0, 240)));
+        return;
+      }
+      const total = Number(payload.total);
+      const index = Number(payload.index);
+      const wav = payload.wav instanceof Uint8Array ? payload.wav : null;
+      if (!Number.isSafeInteger(total) || total < 1 || total > 1000 || index !== received.length || !wav
+        || wav.byteLength < 45 || wav.byteLength > maxBytes) {
+        cleanup();
+        reject(new Error("AUDIO_SEGMENT_INVALID"));
+        return;
+      }
+      received.push(wav);
+      if (received.length === total) {
+        cleanup();
+        resolve({ segments: received, durationMs: Math.max(0, Number(payload.durationMs) || 0) });
+      }
+    });
+    const bytes = new Uint8Array(job.bytes.buffer, job.bytes.byteOffset, job.bytes.byteLength);
+    pill.webContents.send("workspace-audio-segments", { requestId, bytes, maxBytes });
+  });
+}
+
+async function transcribeWorkspaceCloudSegmented(job, signal, update) {
+  update("transcribing");
+  const { segments, durationMs } = await requestWorkspaceAudioSegments(job, MAX_CLOUD_AUDIO_BYTES - 500_000, signal);
+  job.bytes = null;
+  if (durationMs && job.historyMetadata) job.historyMetadata.durationMs = durationMs;
+  const texts = [];
+  for (const [index, wav] of segments.entries()) {
+    signal.throwIfAborted();
+    job.progress = { current: index + 1, total: segments.length };
+    update("transcribing");
+    const text = await transcribeWorkspaceCloud(new Blob([wav], { type: "audio/wav" }), {
+      ...job,
+      name: `abschnitt-${index + 1}.wav`,
+      context: {
+        ...job.context,
+        plan: { ...job.context.plan, context: continuationContext(job.context.plan.context, texts.at(-1)) },
+      },
+    }, signal);
+    segments[index] = null;
+    if (text.trim()) texts.push(text.trim());
+  }
+  return texts.join("\n\n");
+}
+
+// Importierte Dateien werden erst bei der Verarbeitung gelesen, damit mehrere
+// große Dateien in der Warteschlange nicht gleichzeitig im Speicher liegen.
+async function readWorkspaceImportedFile(job) {
+  const handle = await fs.promises.open(job.filePath, "r");
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size !== job.size || stat.mtimeMs !== job.fileMtimeMs) throw new Error("AUDIO_FILE_CHANGED");
+    const bytes = Buffer.alloc(stat.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const part = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (!part.bytesRead) break;
+      offset += part.bytesRead;
+    }
+    if (offset !== stat.size) throw new Error("AUDIO_FILE_CHANGED");
+    return bytes;
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new Error("AUDIO_FILE_CHANGED");
+    throw error;
+  } finally {
+    await handle.close();
+  }
 }
 
 async function processWorkspaceJob(job, signal, update) {
@@ -1592,13 +1697,29 @@ async function processWorkspaceJob(job, signal, update) {
         job.mimeType = recovered.manifest.mimeType;
         job.name = recovered.manifest.name;
       }
+      if (job.filePath && !job.bytes) {
+        try {
+          job.bytes = await readWorkspaceImportedFile(job);
+        } catch (error) {
+          throw workspaceAudioError(error, plan);
+        }
+      }
       if (job.recordingId) workspaceRecordingStore.markTranscriptionStarted(job.recordingId, plan.transcription.provider !== "local");
-      if (plan.transcription.provider === "local") {
-        rawText = await requestWorkspaceLocalTranscription(job, signal, update);
-      } else {
-        update("transcribing");
-        const audio = new Blob([job.bytes], { type: job.mimeType });
-        rawText = await transcribeWorkspaceCloud(audio, job, signal);
+      try {
+        if (plan.transcription.provider === "local") {
+          rawText = await requestWorkspaceLocalTranscription(job, signal, update);
+        } else if (needsCloudSegmentation(job.bytes.byteLength, plan)) {
+          rawText = await transcribeWorkspaceCloudSegmented(job, signal, update);
+        } else {
+          update("transcribing");
+          const audio = new Blob([job.bytes], { type: job.mimeType });
+          rawText = await transcribeWorkspaceCloud(audio, job, signal);
+        }
+      } catch (error) {
+        if (error?.name === "AbortError") throw error;
+        throw workspaceAudioError(error, plan);
+      } finally {
+        job.progress = null;
       }
       if (job.recordingId) workspaceRecordingStore.markTranscribed(job.recordingId, rawText);
     }
@@ -1642,6 +1763,21 @@ workspaceQueue = new SerialWorkspaceQueue(processWorkspaceJob, (jobs) => {
   syncWakeAudioState();
   updateTray();
   syncWorkspaceWindow();
+});
+
+ipcMain.on("workspace-local-progress", (event, payload) => {
+  if (event.sender !== pill?.webContents) return;
+  const pending = workspaceLocalRequests.get(payload?.requestId);
+  const current = Number(payload?.current);
+  const total = Number(payload?.total);
+  if (!pending || !Number.isSafeInteger(current) || !Number.isSafeInteger(total) || total < 1 || total > 1000 || current < 1 || current > total) return;
+  pending.progress(current, total);
+});
+
+ipcMain.on("workspace-audio-segment", (event, payload) => {
+  if (event.sender !== pill?.webContents) return;
+  const handler = workspaceSegmentRequests.get(payload?.requestId);
+  if (handler) handler(payload);
 });
 
 ipcMain.on("workspace-local-result", (event, payload) => {
@@ -2029,9 +2165,9 @@ ipcMain.handle("workspace-action", async (event, action, payload) => {
     const context = captureProcessingContext();
     assertWorkspaceProcessingReady(context);
     const selected = await dialog.showOpenDialog(workspaceWin, {
-      title: uiText("Audiodatei auswählen", "Choose audio file"),
+      title: uiText("Audio- oder Videodatei auswählen", "Choose audio or video file"),
       properties: ["openFile"],
-      filters: [{ name: "Audio", extensions: ["wav", "mp3", "mpeg", "mpga", "m4a", "mp4", "webm", "ogg", "oga", "flac"] }],
+      filters: [{ name: uiText("Audio und Video", "Audio and video"), extensions: ["wav", "mp3", "mpeg", "mpga", "m4a", "mp4", "webm", "ogg", "oga", "flac"] }],
     });
     if (selected.canceled || selected.filePaths.length !== 1) return workspaceSnapshot();
     const filePath = selected.filePaths[0];
@@ -2047,20 +2183,13 @@ ipcMain.handle("workspace-action", async (event, action, payload) => {
       } catch (error) {
         throw workspaceAudioError(error, context.plan);
       }
-      const bytes = Buffer.alloc(stat.size);
-      let offset = 0;
-      while (offset < bytes.length) {
-        const part = await handle.read(bytes, offset, bytes.length - offset, offset);
-        if (!part.bytesRead) break;
-        offset += part.bytesRead;
-      }
-      if (offset !== stat.size) throw new Error(uiText("Die Audiodatei wurde während des Imports verändert.", "The audio file changed during import."));
       try {
         workspaceQueue.enqueue({
           id: nextWorkspaceJobId("file"),
           source: "file",
           ...metadata,
-          bytes,
+          filePath,
+          fileMtimeMs: stat.mtimeMs,
           context,
           historyMetadata: workspaceHistoryMetadata(context),
         });
@@ -2454,6 +2583,13 @@ ipcMain.on("prepared", (event, result) => {
   if (MODEL_SMOKE) {
     if (result.ok) {
       console.log(`MODEL_SMOKE_OK: ${result.modelId}; revision=${result.revision}; backend=${result.backend}; local_files_only=${result.localFilesOnly}; network=offline`);
+      if (LONG_AUDIO_SMOKE_FILE) {
+        runLongAudioSmoke().catch((error) => {
+          console.error(`LONG_AUDIO_SMOKE_FAILED: ${String(error?.message || error).slice(0, 300)}`);
+          process.exitCode = 1;
+        }).finally(quitApp);
+        return;
+      }
     } else {
       console.error(`MODEL_SMOKE_FAILED: ${String(result.reason || "unknown error").slice(0, 300)}`);
       process.exitCode = 1;
@@ -2466,6 +2602,46 @@ ipcMain.on("prepared", (event, result) => {
     : "Lokales Modell in den Einstellungen herunterladen";
   updateTray();
 });
+
+async function runLongAudioSmoke() {
+  if (!/^nivune-long-audio-[a-zA-Z0-9_-]+\.(m4a|mp4|wav|mp3|webm)$/.test(LONG_AUDIO_SMOKE_FILE)) throw new Error("unsafe file name");
+  const filePath = path.join(app.getPath("temp"), LONG_AUDIO_SMOKE_FILE);
+  const stat = await fs.promises.stat(filePath);
+  const header = Buffer.alloc(32);
+  const handle = await fs.promises.open(filePath, "r");
+  await handle.read(header, 0, 32, 0);
+  await handle.close();
+  const plan = { transcription: { provider: "local", model: sharedCore.LOCAL_MODELS.genau.id }, language: "de" };
+  const metadata = validateAudioFile({ name: LONG_AUDIO_SMOKE_FILE, size: stat.size, header, plan });
+  const job = { ...metadata, filePath, fileMtimeMs: stat.mtimeMs, context: { plan } };
+  job.bytes = await readWorkspaceImportedFile(job);
+  const controller = new AbortController();
+  const segmentStarted = Date.now();
+  const { segments, durationMs } = await requestWorkspaceAudioSegments(job, MAX_CLOUD_AUDIO_BYTES - 500_000, controller.signal);
+  const largest = Math.max(...segments.map((segment) => segment.byteLength));
+  console.log(`LONG_AUDIO_SEGMENTS: file_bytes=${stat.size}; duration_s=${Math.round(durationMs / 1000)}; cloud_segments=${segments.length}; largest_bytes=${largest}; limit_bytes=${MAX_CLOUD_AUDIO_BYTES}; seconds=${Math.round((Date.now() - segmentStarted) / 1000)}`);
+  if (LONG_AUDIO_CLOUD_URL) {
+    const baseUrl = sharedCore.normalizeCompatibleBaseUrl(LONG_AUDIO_CLOUD_URL);
+    if (!baseUrl || !/^http:\/\/127\.0\.0\.1:\d+\//.test(`${baseUrl}/`)) throw new Error("cloud smoke requires a 127.0.0.1 test server");
+    session.defaultSession.disableNetworkEmulation();
+    job.context = {
+      plan: { transcription: { provider: "openai-compatible", model: "nivune-smoke", baseUrl }, language: "de", context: "Teammeeting", dictionary: [] },
+      transcriptionKey: "",
+      interfaceLanguage: "de",
+    };
+    job.bytes = await readWorkspaceImportedFile(job);
+    const stages = [];
+    const cloudText = await transcribeWorkspaceCloudSegmented(job, controller.signal, () => stages.push(job.progress ? `${job.progress.current}/${job.progress.total}` : "-"));
+    console.log(`LONG_AUDIO_CLOUD_OK: parts=${cloudText.split("\n\n").length}; progress=${stages.filter((stage) => stage !== "-").join(",")}; network=loopback-only`);
+    return;
+  }
+  let progressEvents = 0;
+  const localStarted = Date.now();
+  const text = await requestWorkspaceLocalTranscription(job, controller.signal, () => { progressEvents += 1; });
+  await fs.promises.writeFile(`${filePath}.transcript.txt`, text, { mode: 0o600 });
+  const words = text.split(/\s+/).filter(Boolean).length;
+  console.log(`LONG_AUDIO_SMOKE_OK: local_words=${words}; progress_updates=${progressEvents}; last_progress=${job.progress ? `${job.progress.current}/${job.progress.total}` : "none"}; seconds=${Math.round((Date.now() - localStarted) / 1000)}; network=offline`);
+}
 
 function sendLocalModelCommand(action) {
   if (!pillReady || !pill || pill.isDestroyed()) return;
@@ -2876,7 +3052,7 @@ app.whenReady().then(async () => {
         logError("SMOKE_TIMEOUT");
       }
       quitApp();
-    }, MODEL_SMOKE ? 60_000 : 15_000).unref();
+    }, LONG_AUDIO_SMOKE_FILE ? 3 * 60 * 60_000 : MODEL_SMOKE ? 60_000 : 15_000).unref();
     return;
   }
   try {

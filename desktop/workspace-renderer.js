@@ -68,6 +68,7 @@ function statusLabel(job) {
   if (job.status === "processing") {
     if (job.stage === "refining") return t("Text wird überarbeitet …", "Refining text …");
     if (job.stage === "postprocessing") return t("Text wird fertiggestellt …", "Finalizing text …");
+    if (job.progress) return t(`Abschnitt ${job.progress.current} von ${job.progress.total} wird transkribiert …`, `Transcribing section ${job.progress.current} of ${job.progress.total} …`);
     return t("Audio wird transkribiert …", "Transcribing audio …");
   }
   if (job.status === "completed") return job.warning ? t("Fertig · Feinschliff verworfen", "Done · refinement discarded") : t("Fertig", "Done");

@@ -1,7 +1,11 @@
 const path = require("path");
 
+// Bis zu dieser Größe geht eine Datei unverändert an einen Cloud-Anbieter;
+// größere Dateien werden vorher in Abschnitte unter dieser Grenze geteilt.
 const MAX_CLOUD_AUDIO_BYTES = 24_000_000;
 const MAX_LOCAL_AUDIO_BYTES = 100_000_000;
+// Obergrenze für Import und Aufnahme (lange Meetings, Video-Dateien).
+const MAX_IMPORT_AUDIO_BYTES = 1_000_000_000;
 const MAX_QUEUE_JOBS = 12;
 const AUDIO_TYPES = Object.freeze({
   ".wav": { mimeType: "audio/wav", matches: (b) => ascii(b, 0, 4) === "RIFF" && ascii(b, 8, 12) === "WAVE" },
@@ -24,8 +28,20 @@ function isMp4(bytes) {
   return bytes.length >= 12 && ascii(bytes, 4, 8) === "ftyp";
 }
 
-function maxBytesForPlan(plan) {
-  return plan?.transcription?.provider === "local" ? MAX_LOCAL_AUDIO_BYTES : MAX_CLOUD_AUDIO_BYTES;
+function maxBytesForPlan() {
+  return MAX_IMPORT_AUDIO_BYTES;
+}
+
+/** Cloud-Aufträge über der Anbietergrenze werden in Abschnitte geteilt. */
+function needsCloudSegmentation(size, plan) {
+  return plan?.transcription?.provider !== "local" && Number(size) > MAX_CLOUD_AUDIO_BYTES;
+}
+
+function publicProgress(progress) {
+  if (!progress || typeof progress !== "object") return null;
+  const total = Math.max(0, Math.min(1000, Math.floor(Number(progress.total) || 0)));
+  const current = Math.max(0, Math.min(total, Math.floor(Number(progress.current) || 0)));
+  return total > 1 ? { current, total } : null;
 }
 
 function validateAudioFile({ name, size, header, plan }) {
@@ -94,6 +110,7 @@ function publicJob(job, activeId, queuedIds) {
     text: job.text || "",
     warning: job.warning || null,
     error: job.error || null,
+    progress: job.status === "processing" ? publicProgress(job.progress) : null,
     ...(metadata ? { metadata } : {}),
     createdAt: job.createdAt,
     queuePosition: job.id === activeId ? 0 : Math.max(0, queuedIds.indexOf(job.id) + 1),
@@ -196,6 +213,8 @@ module.exports = {
   AUDIO_TYPES,
   MAX_CLOUD_AUDIO_BYTES,
   MAX_LOCAL_AUDIO_BYTES,
+  MAX_IMPORT_AUDIO_BYTES,
+  needsCloudSegmentation,
   MAX_QUEUE_JOBS,
   SerialWorkspaceQueue,
   maxBytesForPlan,

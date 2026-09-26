@@ -32,6 +32,7 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
   </div>
 
 <script src="audio-runtime.js"></script>
+<script src="audio-segments.js"></script>
 <script src="whisper-bundle.js"></script>
 <script type="module">
   const statusEl = document.getElementById("status");
@@ -51,6 +52,7 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
     classifyLocalModelCacheFiles,
     isLocalModelCacheUrl,
     revisionAwareModelCache,
+    transcribeInWindows,
   } = window.NivuneTransformers;
   const MODELS = {
     genau: MODEL_DEFINITIONS.genau.id,
@@ -227,42 +229,88 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
   });
 
   const cancelledWorkspaceRequests = new Set();
+  const segments = window.nivuneAudioSegments;
   window.klartext.onWorkspaceLocalCancel((requestId) => cancelledWorkspaceRequests.add(String(requestId || "")));
+
+  // Dekodiert Audio- und Videodateien (nur die Tonspur) zu 16-kHz-Mono.
+  // Das Original wird danach sofort freigegeben, damit lange Meetings in den
+  // Arbeitsspeicher passen.
+  async function decodeWorkspaceAudio(request) {
+    const bytes = request.bytes instanceof Uint8Array ? request.bytes : new Uint8Array(request.bytes || []);
+    if (!bytes.byteLength) throw new Error("AUDIO_FILE_EMPTY");
+    const context = new AudioContext({ sampleRate: SAMPLE_RATE });
+    try {
+      const source = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      let decoded;
+      try {
+        decoded = await context.decodeAudioData(source);
+      } catch {
+        throw new Error("AUDIO_DECODE_FAILED");
+      }
+      if (!decoded.length || !decoded.numberOfChannels) throw new Error("AUDIO_DECODE_EMPTY");
+      if (decoded.duration > segments.MAX_SEGMENTED_SECONDS) throw new Error("AUDIO_TOO_LONG");
+      const channels = Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index));
+      return { samples: segments.mixToMono(channels), durationMs: Math.round(decoded.duration * 1000) };
+    } finally {
+      context.close().catch(() => {});
+    }
+  }
+
   window.klartext.onWorkspaceLocalTranscribe(async (request) => {
     const requestId = String(request?.requestId || "");
     if (!requestId) return;
-    let context = null;
     try {
-      const bytes = request.bytes instanceof Uint8Array ? request.bytes : new Uint8Array(request.bytes || []);
-      if (!bytes.byteLength) throw new Error("AUDIO_FILE_EMPTY");
-      context = new AudioContext({ sampleRate: SAMPLE_RATE });
-      const source = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-      const decoded = await context.decodeAudioData(source);
+      const { samples } = await decodeWorkspaceAudio(request);
       if (cancelledWorkspaceRequests.has(requestId)) return;
-      if (!decoded.length || !decoded.numberOfChannels) throw new Error("AUDIO_DECODE_EMPTY");
-      const mono = new Float32Array(decoded.length);
-      for (let channel = 0; channel < decoded.numberOfChannels; channel += 1) {
-        const samples = decoded.getChannelData(channel);
-        for (let index = 0; index < samples.length; index += 1) mono[index] += samples[index] / decoded.numberOfChannels;
-      }
       const transcriber = await getTranscriber(request.model, false);
+      // Fortschritt und Absätze in 5-Minuten-Abschnitten; innerhalb davon
+      // eigene Whisper-Fenster unter 30 Sekunden (siehe shared/whisper-windows.ts).
+      const ranges = segments.splitRanges(samples, SAMPLE_RATE, segments.LOCAL_SEGMENT_SECONDS * SAMPLE_RATE);
+      const texts = [];
+      for (const [index, range] of ranges.entries()) {
+        if (cancelledWorkspaceRequests.has(requestId)) return;
+        if (ranges.length > 1) window.klartext.workspaceLocalProgress({ requestId, current: index + 1, total: ranges.length });
+        const text = await transcribeInWindows(transcriber, samples.subarray(range.start, range.end), SAMPLE_RATE, {
+          language: request.language || undefined,
+        }, { shouldStop: () => cancelledWorkspaceRequests.has(requestId) });
+        if (text) texts.push(text);
+      }
       if (cancelledWorkspaceRequests.has(requestId)) return;
-      const output = await transcriber(mono, {
-        chunk_length_s: 30,
-        stride_length_s: 5,
-        language: request.language || undefined,
-        task: "transcribe",
-      });
-      if (cancelledWorkspaceRequests.has(requestId)) return;
-      const text = (Array.isArray(output) ? output.map((item) => item.text).join(" ") : output.text) ?? "";
-      window.klartext.workspaceLocalResult({ requestId, text: text.trim() });
+      window.klartext.workspaceLocalResult({ requestId, text: texts.join(ranges.length > 1 ? "\n\n" : " ").trim() });
     } catch (error) {
       if (!cancelledWorkspaceRequests.has(requestId)) {
         window.klartext.workspaceLocalResult({ requestId, error: String(error?.message || error) });
       }
     } finally {
       cancelledWorkspaceRequests.delete(requestId);
-      context?.close().catch(() => {});
+    }
+  });
+
+  // Für Cloud-Anbieter: lange Dateien in WAV-Abschnitte unter der Anbietergrenze
+  // teilen. Abschnitte werden einzeln an den Main-Prozess gesendet.
+  window.klartext.onWorkspaceAudioSegments(async (request) => {
+    const requestId = String(request?.requestId || "");
+    if (!requestId) return;
+    try {
+      const maxBytes = Number(request.maxBytes);
+      const { samples, durationMs } = await decodeWorkspaceAudio(request);
+      const ranges = segments.splitRanges(samples, SAMPLE_RATE, segments.maxSamplesForBytes(maxBytes));
+      for (const [index, range] of ranges.entries()) {
+        if (cancelledWorkspaceRequests.has(requestId)) return;
+        window.klartext.workspaceAudioSegment({
+          requestId,
+          index,
+          total: ranges.length,
+          durationMs,
+          wav: new Uint8Array(segments.encodeWavMono(samples, SAMPLE_RATE, range)),
+        });
+      }
+    } catch (error) {
+      if (!cancelledWorkspaceRequests.has(requestId)) {
+        window.klartext.workspaceAudioSegment({ requestId, error: String(error?.message || error) });
+      }
+    } finally {
+      cancelledWorkspaceRequests.delete(requestId);
     }
   });
 
@@ -536,13 +584,7 @@ canvas{width:100px;height:25px;color:var(--accent)}#timer{font:12px ui-monospace
         });
       } else {
         const t = await getTranscriber(currentModelId);
-        const out = await t(allPcm, {
-          chunk_length_s: 30,
-          stride_length_s: 5,
-          language: currentLang || undefined,
-          task: "transcribe",
-        });
-        const raw = (Array.isArray(out) ? out.map((o) => o.text).join(" ") : out.text) ?? "";
+        const raw = await transcribeInWindows(t, allPcm, SAMPLE_RATE, { language: currentLang || undefined });
         window.klartext.result({ text: raw.trim(), audio: null, stopReason: options.reason });
       }
     } catch (err) {

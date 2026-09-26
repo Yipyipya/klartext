@@ -62,6 +62,7 @@
       "runtime.js",
       "runtime-assets.js",
       "audio-runtime.js",
+      "audio-segments.js",
       "media-permissions.js",
       "accessibility.js",
       "wake-controller.js",
