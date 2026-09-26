@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { computeStats, type HistoryEntry } from "@/lib/store";
+import { localeFor, uiText, type InterfaceLanguage } from "@/shared/i18n";
 
-function formatDate(ts: number): string {
-  return new Date(ts).toLocaleString("de-DE", {
+function formatDate(ts: number, interfaceLanguage: InterfaceLanguage): string {
+  return new Date(ts).toLocaleString(localeFor(interfaceLanguage), {
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",
@@ -15,11 +16,13 @@ function formatDate(ts: number): string {
 
 export default function HistoryPanel({
   entries,
+  interfaceLanguage,
   onCopy,
   onDelete,
   onClear,
 }: {
   entries: HistoryEntry[];
+  interfaceLanguage: InterfaceLanguage;
   onCopy: (text: string) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
@@ -35,10 +38,10 @@ export default function HistoryPanel({
     : entries;
 
   const tiles = [
-    { label: "Wörter gesamt", value: stats.totalWords.toLocaleString("de-DE") },
-    { label: "Ø Tempo", value: stats.avgWpm ? `${stats.avgWpm} WPM` : "—" },
-    { label: "Tage-Serie", value: String(stats.streakDays) },
-    { label: "Aufnahmen", value: String(stats.entries) },
+    { label: uiText(interfaceLanguage, "Wörter gesamt", "Total words"), value: stats.totalWords.toLocaleString(localeFor(interfaceLanguage)) },
+    { label: uiText(interfaceLanguage, "Ø Tempo", "Avg. pace"), value: stats.avgWpm ? `${stats.avgWpm} WPM` : "—" },
+    { label: uiText(interfaceLanguage, "Tage-Serie", "Day streak"), value: String(stats.streakDays) },
+    { label: uiText(interfaceLanguage, "Aufnahmen", "Recordings"), value: String(stats.entries) },
   ];
 
   return (
@@ -63,17 +66,17 @@ export default function HistoryPanel({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Verlauf durchsuchen …"
-            aria-label="Verlauf durchsuchen"
+            placeholder={uiText(interfaceLanguage, "Verlauf durchsuchen …", "Search history …")}
+            aria-label={uiText(interfaceLanguage, "Verlauf durchsuchen", "Search history")}
             className="field px-4 py-2.5 text-sm"
           />
           <button
             onClick={() => {
-              if (confirm("Gesamten Verlauf löschen?")) onClear();
+              if (confirm(uiText(interfaceLanguage, "Gesamten Verlauf löschen?", "Delete all history?"))) onClear();
             }}
             className="btn btn-secondary shrink-0 px-4 py-2.5 text-xs"
           >
-            Alles löschen
+            {uiText(interfaceLanguage, "Alles löschen", "Delete all")}
           </button>
         </div>
       )}
@@ -83,15 +86,14 @@ export default function HistoryPanel({
           className="kt-card p-10 text-center"
           style={{ borderStyle: "dashed", borderWidth: "1.5px" }}
         >
-          <p className="font-display text-2xl tracking-tight">Noch nichts diktiert</p>
+          <p className="font-display text-2xl tracking-tight">{uiText(interfaceLanguage, "Noch nichts diktiert", "Nothing dictated yet")}</p>
           <p className="mt-1 text-sm text-mut">
-            Jedes Diktat und jede transkribierte Datei landet automatisch hier.
-            Der Verlauf wird nur in diesem Browser gespeichert.
+            {uiText(interfaceLanguage, "Jedes Diktat und jede transkribierte Datei landet automatisch hier. Der Verlauf wird nur in diesem Browser gespeichert.", "Every dictation and transcribed file appears here automatically. History is stored only in this browser.")}
           </p>
         </div>
       )}
 
-      {entries.length > 0 && filtered.length === 0 && <p role="status" className="py-10 text-sm text-mut">Keine Aufnahmen für „{query}“ gefunden.</p>}
+      {entries.length > 0 && filtered.length === 0 && <p role="status" className="py-10 text-sm text-mut">{uiText(interfaceLanguage, `Keine Aufnahmen für „${query}“ gefunden.`, `No recordings found for “${query}”.`)}</p>}
 
       {filtered.map((e) => (
         <div key={e.id} className="history-entry">
@@ -103,10 +105,10 @@ export default function HistoryPanel({
                   : "bg-teal/12 text-teal"
               }`}
             >
-              {e.source === "diktat" ? "Diktat" : "Datei"}
+              {e.source === "diktat" ? uiText(interfaceLanguage, "Diktat", "Dictation") : uiText(interfaceLanguage, "Datei", "File")}
             </span>
-            <span>{formatDate(e.ts)}</span>
-            <span>· {e.words} Wörter</span>
+            <span>{formatDate(e.ts, interfaceLanguage)}</span>
+            <span>· {e.words} {uiText(interfaceLanguage, "Wörter", "words")}</span>
             {e.label && <span className="truncate">· {e.label}</span>}
           </div>
           <p
@@ -121,21 +123,21 @@ export default function HistoryPanel({
               onClick={() => onCopy(e.text)}
               className="btn btn-secondary px-4 py-1.5 text-xs"
             >
-              Kopieren
+              {uiText(interfaceLanguage, "Kopieren", "Copy")}
             </button>
             {e.text.length > 220 && (
               <button
                 onClick={() => setExpanded(expanded === e.id ? null : e.id)}
                 className="text-xs font-semibold text-mut transition-colors hover:text-ink"
               >
-                {expanded === e.id ? "Weniger" : "Mehr anzeigen"}
+                {expanded === e.id ? uiText(interfaceLanguage, "Weniger", "Show less") : uiText(interfaceLanguage, "Mehr anzeigen", "Show more")}
               </button>
             )}
             <button
               onClick={() => onDelete(e.id)}
               className="ml-auto text-xs font-semibold text-mut transition-colors hover:text-ember-2"
             >
-              Löschen
+              {uiText(interfaceLanguage, "Löschen", "Delete")}
             </button>
           </div>
         </div>

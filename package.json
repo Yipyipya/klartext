@@ -1,16 +1,21 @@
 {
-  "name": "klartext",
-  "version": "0.1.0",
+  "name": "nivune",
+  "version": "1.0.0-beta.1",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --require ./tests/register.cjs --test tests/*.test.cjs"
+    "test": "node --require ./tests/register.cjs --test tests/*.test.cjs",
+    "typecheck": "tsc --noEmit",
+    "desktop:bundle": "npm --prefix desktop run bundle",
+    "verify": "npm test && npm run typecheck && npm run build && npm run desktop:bundle",
+    "artifact:manifest": "node scripts/create-build-manifest.cjs"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.2.0",
-    "next": "16.2.10",
+    "@huggingface/transformers": "4.3.0",
+    "next": "16.3.5",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

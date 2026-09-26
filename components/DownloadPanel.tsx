@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { uiText, type InterfaceLanguage } from "@/shared/i18n";
+import { LATEST_DOWNLOAD_BASE_URL, RELEASE_REPOSITORY_URL } from "@/shared/release";
 
 /* Stabile Links: „latest" zeigt immer auf die neueste Veröffentlichung,
    sodass sich die URLs bei einem neuen Build nicht ändern. */
-const REPO = "https://github.com/Yipyipya/klartext";
-const REL = `${REPO}/releases/latest/download`;
+const REPO = RELEASE_REPOSITORY_URL;
+const REL = LATEST_DOWNLOAD_BASE_URL;
 
 type OS = "mac" | "win";
 
@@ -28,15 +30,15 @@ const PLATFORMS: Platform[] = [
     name: "macOS",
     arch: "Apple Silicon (M1 und neuer)",
     size: "113 MB",
-    file: "Klartext-Mac-AppleSilicon.dmg",
-    href: `${REL}/Klartext-Mac-AppleSilicon.dmg`,
+    file: "Nivune-Mac-AppleSilicon.dmg",
+    href: `${REL}/Nivune-Mac-AppleSilicon.dmg`,
     Icon: AppleIcon,
     advantage:
       "Sitzt oben in der Menüleiste und diktiert in jede App, in E-Mails, Slack, Notizen oder den Browser.",
     install: [
       "Die geladene .dmg-Datei per Doppelklick öffnen.",
-      "Klartext in den Ordner „Programme“ ziehen und eine ältere Version ersetzen.",
-      "Klartext öffnen. Die App ist noch nicht Apple-notarisiert; prüfe eventuelle Systemwarnungen und Schlüsselbund-Dialoge selbst.",
+      "Nivune in den Ordner „Programme“ ziehen und eine ältere Version ersetzen.",
+      "Nivune öffnen. Die App ist noch nicht Apple-notarisiert; prüfe eventuelle Systemwarnungen und Schlüsselbund-Dialoge selbst.",
       "Beim ersten Diktat Mikrofon und Bedienungshilfen erlauben, damit der Text an der Cursor-Position landet.",
       "Im Menüleisten-Menü den Autostart-Status prüfen. Falls nötig unter Allgemein → Anmeldeobjekte hinzufügen.",
     ],
@@ -47,22 +49,22 @@ const PLATFORMS: Platform[] = [
     name: "Windows",
     arch: "64 Bit (Windows 10 und 11)",
     size: "95 MB",
-    file: "Klartext-Windows.exe",
-    href: `${REL}/Klartext-Windows.exe`,
+    file: "Nivune-Windows.exe",
+    href: `${REL}/Nivune-Windows.exe`,
     Icon: WindowsIcon,
     advantage:
       "Läuft im Infobereich neben der Uhr und fügt den Text direkt dort ein, wo dein Cursor gerade steht.",
     install: [
       "Die geladene .exe-Datei per Doppelklick starten.",
       "Falls Windows warnt, auf „Weitere Informationen“ und dann „Trotzdem ausführen“ klicken, da die App nicht signiert ist.",
-      "Dem Einrichtungsassistenten folgen, Klartext legt eine Verknüpfung im Startmenü an.",
+      "Dem Einrichtungsassistenten folgen, Nivune legt eine Verknüpfung im Startmenü an.",
       "Beim ersten Diktat den Mikrofon-Zugriff erlauben. Im Tray den Autostart-Status prüfen.",
     ],
     shortcut: "Strg + Umschalt + Leertaste",
   },
 ];
 
-export default function DownloadPanel() {
+export default function DownloadPanel({ interfaceLanguage }: { interfaceLanguage: InterfaceLanguage }) {
   const [you, setYou] = useState<OS | null>(null);
 
   useEffect(() => {
@@ -72,7 +74,31 @@ export default function DownloadPanel() {
   }, []);
 
   // Das eigene System nach vorne sortieren
-  const ordered = [...PLATFORMS].sort((a) =>
+  const localized = PLATFORMS.map((platform) => interfaceLanguage === "de" ? platform : platform.os === "mac" ? {
+    ...platform,
+    arch: "Apple Silicon (M1 and newer)",
+    advantage: "Sits in the menu bar and dictates into any app, including email, Slack, Notes, or your browser.",
+    install: [
+      "Double-click the downloaded .dmg file.",
+      "Drag Nivune into Applications and replace an older version.",
+      "Open Nivune. The app is not yet notarized by Apple; review any system warnings and Keychain dialogs yourself.",
+      "Allow microphone and Accessibility access on the first dictation so text appears at the cursor position.",
+      "Check launch-at-login status from the menu-bar menu. If needed, add it under General → Login Items.",
+    ],
+    shortcut: "⌥ + Space",
+  } : {
+    ...platform,
+    arch: "64-bit (Windows 10 and 11)",
+    advantage: "Runs in the notification area by the clock and inserts text directly where your cursor is.",
+    install: [
+      "Double-click the downloaded .exe file.",
+      "If Windows warns you, choose More info and then Run anyway because the app is not signed yet.",
+      "Follow the setup wizard; Nivune creates a shortcut in the Start menu.",
+      "Allow microphone access on the first dictation and check launch-at-login status in the tray.",
+    ],
+    shortcut: "Ctrl + Shift + Space",
+  });
+  const ordered = [...localized].sort((a) =>
     you && a.os === you ? -1 : 0
   );
 
@@ -86,23 +112,18 @@ export default function DownloadPanel() {
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="font-display text-2xl leading-tight tracking-tight">
-              Diktieren in jeder App, ganz ohne Tab-Wechsel
+              {uiText(interfaceLanguage, "Diktieren in jeder App, ganz ohne Tab-Wechsel", "Dictate in any app without switching tabs")}
             </h2>
             <p className="mt-2 text-[15px] leading-relaxed text-mut">
-              Die Web-App diktiert und du kopierst den Text selbst. Die
-              Desktop-App geht einen Schritt weiter. Du drückst überall auf dem
-              Rechner deinen Shortcut, sprichst, und der fertige Text erscheint
-              sofort an der Stelle, an der dein Cursor steht. In der E-Mail, im
-              Chat, im Dokument. Sie bleibt dezent in der Ecke und wartet auf
-              dich.
+              {uiText(interfaceLanguage, "Die Web-App diktiert und du kopierst den Text selbst. Die Desktop-App geht einen Schritt weiter. Du drückst überall auf dem Rechner deinen Shortcut, sprichst, und der fertige Text erscheint sofort an der Stelle, an der dein Cursor steht. In der E-Mail, im Chat, im Dokument. Sie bleibt dezent in der Ecke und wartet auf dich.", "In the web app, you dictate and copy the text yourself. The desktop app goes one step further: press your shortcut anywhere, speak, and the finished text appears immediately at the cursor—in email, chat, or a document. It stays quietly out of the way until you need it.")}
             </p>
           </div>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           {[
-            ["Systemweit", "Funktioniert in jedem Programm, nicht nur im Browser."],
-            ["Ein Tastendruck", "Shortcut drücken, sprechen, fertig eingefügt."],
-            ["Zwei Modi", "Beste Qualität über OpenAI oder vollständig lokal auf deinem Gerät."],
+            [uiText(interfaceLanguage, "Systemweit", "System-wide"), uiText(interfaceLanguage, "Funktioniert in jedem Programm, nicht nur im Browser.", "Works in every app, not only your browser.")],
+            [uiText(interfaceLanguage, "Ein Tastendruck", "One shortcut"), uiText(interfaceLanguage, "Shortcut drücken, sprechen, fertig eingefügt.", "Press the shortcut, speak, and the text is inserted.")],
+            [uiText(interfaceLanguage, "Zwei Modi", "Two modes"), uiText(interfaceLanguage, "Beste Qualität über OpenAI oder vollständig lokal auf deinem Gerät.", "Best quality through OpenAI or fully local on your device.")],
           ].map(([t, d]) => (
             <div key={t} className="kt-hair rounded-2xl bg-surface-2 p-4">
               <p className="text-sm font-semibold">{t}</p>
@@ -131,7 +152,7 @@ export default function DownloadPanel() {
                   {you === p.os && (
                     <span className="chip bg-teal/12 text-teal">
                       <span className="h-1.5 w-1.5 rounded-full bg-teal" />
-                      dein System
+                      {uiText(interfaceLanguage, "dein System", "your system")}
                     </span>
                   )}
                 </div>
@@ -148,13 +169,13 @@ export default function DownloadPanel() {
               className="btn btn-primary mt-5 w-full justify-center py-3 text-sm"
             >
               <DownloadIcon />
-              Herunterladen
+              {uiText(interfaceLanguage, "Herunterladen", "Download")}
               <span className="font-normal text-white/70">· {p.size}</span>
             </a>
 
             <div className="mt-5 border-t border-line pt-4">
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-mut">
-                Installation
+                {uiText(interfaceLanguage, "Installation", "Installation")}
               </p>
               <ol className="space-y-2">
                 {p.install.map((step, n) => (
@@ -170,7 +191,7 @@ export default function DownloadPanel() {
 
             <div className="mt-4 flex items-center gap-2 rounded-2xl bg-ember-soft px-4 py-3">
               <span className="text-xs font-semibold text-ink">
-                Diktieren mit
+                {uiText(interfaceLanguage, "Diktieren mit", "Dictate with")}
               </span>
               <kbd className="rounded-md bg-surface px-2 py-1 font-mono text-[11px] text-ink-soft shadow-[var(--sh-sm)] kt-hair">
                 {p.shortcut}
@@ -182,25 +203,19 @@ export default function DownloadPanel() {
 
       {/* Hinweis zur Signatur */}
       <div className="kt-hair rounded-xl bg-lav/40 p-5 text-sm leading-relaxed text-lav-ink">
-        <p className="font-semibold">Ein kurzer Hinweis zur Sicherheit</p>
+        <p className="font-semibold">{uiText(interfaceLanguage, "Ein kurzer Hinweis zur Sicherheit", "A quick security note")}</p>
         <p className="mt-1">
-          Version 0.3.0 ist für persönliche Tests gedacht. Mac ist nur ad-hoc signiert
-          und nicht Apple-notarisiert; Windows hat noch kein vertrauenswürdiges
-          Herausgeberzertifikat. Lade die Apps nur aus diesem Projekt. Der Quellcode liegt auf{" "}
+          {uiText(interfaceLanguage, "Version 0.3.0 ist für persönliche Tests gedacht. Mac ist nur ad-hoc signiert und nicht Apple-notarisiert; Windows hat noch kein vertrauenswürdiges Herausgeberzertifikat. Lade die Apps nur aus diesem Projekt. Der Quellcode liegt auf", "Version 0.3.0 is intended for personal testing. The Mac app is only ad-hoc signed and not notarized by Apple; Windows does not yet have a trusted publisher certificate. Download the apps only from this project. The source code is on")} {" "}
           <a
             href={REPO}
             className="font-semibold underline underline-offset-2 hover:text-ink"
           >
             GitHub
           </a>
-          , sodass jeder nachsehen kann, was die App tut.
+          {uiText(interfaceLanguage, ", sodass jeder nachsehen kann, was die App tut.", ", so anyone can inspect what the app does.")}
         </p>
         <p className="mt-2">
-          Die installierte App startet standardmäßig bei der Anmeldung und bereitet
-          den gewählten Modus vor. Bei aktivierter Sprachaktivierung hört die lokale
-          Erkennung auf deinen Startbefehl. Der Autostart lässt sich
-          im Tray abschalten; macOS kann eine zusätzliche Freigabe verlangen.
-          Windows und die echte Anmeldung auf beiden Systemen müssen noch manuell getestet werden.
+          {uiText(interfaceLanguage, "Die installierte App startet standardmäßig bei der Anmeldung und bereitet den gewählten Modus vor. Bei aktivierter Sprachaktivierung hört die lokale Erkennung auf deinen Startbefehl. Der Autostart lässt sich im Tray abschalten; macOS kann eine zusätzliche Freigabe verlangen. Windows und die echte Anmeldung auf beiden Systemen müssen noch manuell getestet werden.", "The installed app launches at login by default and prepares the selected mode. When voice activation is enabled, local detection listens for your start phrase. Launch at login can be disabled from the tray; macOS may require an additional permission. Windows and real login behavior on both systems still need manual testing.")}
         </p>
       </div>
     </div>

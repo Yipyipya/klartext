@@ -97,3 +97,4 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 @media(max-width:560px){.mobile-capture{top:122px}}
 
 .transcript-editor{max-width:75ch;display:block}.mode-selector small,.toggle-row small{font-size:12px}
+.connection-help{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-size:12px;line-height:1.65;color:var(--ink-soft)}.connection-help summary{cursor:pointer;font-weight:550;color:var(--ink)}.connection-help ul{display:grid;gap:6px;margin-top:8px;padding-left:18px;list-style:disc}.connection-help code{font:11px ui-monospace,monospace;padding:1px 5px;border-radius:4px;background:var(--surface);border:1px solid var(--line);word-break:break-all}
