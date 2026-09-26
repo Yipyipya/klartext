@@ -32,6 +32,21 @@ Nahtlose Fortsetzung: [Entwicklungsübergabe](docs/DEVELOPMENT_HANDOFF.md).
   Mac: SHA-256 `cac00a10683a536e3775ef6403c801157be964cbddebb593e90ebab2879fd068`,
   Windows: `d44c5bb58bb11912ede0fc69abb84261dcbc66564560d9ddfe78fdf182a05409`.
 
+### Nachtrag 26. September, Rückmeldungen aus dem Alltag
+
+- Arbeitsbereich-Navigation: Platzhalterzeichen durch dieselben gezeichneten
+  Icons wie in der Web-App ersetzt (visuell geprüft).
+- Key-Fenster öffnete hinter der Einrichtung. Es ist jetzt ein Dialog des
+  aufrufenden Fensters und schließt mit Escape.
+- Beenden von außen (Cmd+Q, Abmelden, Herunterfahren, AppleScript, SIGTERM) war
+  durch die nicht schließbare Aufnahmeblase blockiert. Behoben und am
+  installierten Programm geprüft (AppleScript und SIGTERM beenden sauber).
+- Automatisches Einfügen: Log zeigt „nicht freigegeben“. Ursache ist die
+  Ad-hoc-Signatur: macOS bindet die Bedienungshilfen-Freigabe an genau einen
+  Build, nach jeder Neuinstallation muss sie neu gesetzt werden. Dauerhaft löst
+  das erst die Developer-ID-Signierung (Checkliste A7).
+- 199/199 Tests; installiert ist Build aus Commit `957e54f`.
+
 ## Kurzstand 23. September 2026: Kandidat 1.0.0-beta.1
 
 Alles, was ohne Entscheidungen, Zugänge, echte Geräte oder Beta-Teilnehmende
