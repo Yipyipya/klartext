@@ -908,9 +908,15 @@ function openKeyWindow(provider = "openai") {
     optional: keyWinProvider.startsWith("openai-compatible"),
     interfaceLanguage: settings.interfaceLanguage,
   });
+  // Das Key-Fenster gehört zum aufrufenden Fenster (Einrichtung, Einstellungen,
+  // Arbeitsbereich) und erscheint davor, statt unbemerkt dahinter zu öffnen.
+  const owner = [onboardingWin, settingsWin, workspaceWin]
+    .filter((window) => window && !window.isDestroyed() && window.isVisible())
+    .sort((a, b) => Number(b.isFocused()) - Number(a.isFocused()))[0] || null;
   if (keyWin) {
     keyWin.webContents.send("api-key-config", keyConfig());
     showUserWindow(keyWin);
+    keyWin.moveTop();
     return;
   }
   keyWin = new BrowserWindow({
@@ -919,6 +925,8 @@ function openKeyWindow(provider = "openai") {
     resizable: false,
     minimizable: false,
     maximizable: false,
+    show: false,
+    ...(owner ? { parent: owner, modal: true } : {}),
     title: uiText("Nivune – Beste Qualität", "Nivune – Best quality"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -929,7 +937,10 @@ function openKeyWindow(provider = "openai") {
   });
   keyWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   keyWin.webContents.on("will-navigate", (event) => event.preventDefault());
-  keyWin.once("ready-to-show", () => showUserWindow(keyWin));
+  keyWin.once("ready-to-show", () => {
+    showUserWindow(keyWin);
+    keyWin?.moveTop();
+  });
   keyWin.webContents.once("did-finish-load", () => {
     keyWin?.webContents.send("api-key-config", keyConfig());
   });

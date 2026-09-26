@@ -576,3 +576,17 @@ test("nicht entschlüsselbare übernommene Keys gelten als fehlend statt als ges
   assert.doesNotMatch(main, /Boolean\(settings\.[a-zA-Z]+KeyEnc\)/, "Statusanzeigen verwenden hasStoredKey");
   assert.match(main, /settings\.mode === "quality"\) \{[\s\S]{0,300}getProviderKey\(settings\.transcriptionProvider/);
 });
+
+test("Key-Fenster öffnet als Dialog vor dem aufrufenden Fenster", () => {
+  const main = fs.readFileSync(path.join(__dirname, "../desktop/main.js"), "utf8");
+  assert.match(main, /\[onboardingWin, settingsWin, workspaceWin\][\s\S]{0,300}isFocused\(\)/);
+  assert.match(main, /\.\.\.\(owner \? \{ parent: owner, modal: true \} : \{\}\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, "../desktop/keywin-renderer.js"), "utf8"), /Escape/);
+});
+
+test("Arbeitsbereich-Navigation nutzt gezeichnete Icons statt Textzeichen", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../desktop/workspace.html"), "utf8");
+  const nav = html.slice(html.indexOf('<nav class="workspace-navigation"'), html.indexOf("</nav>"));
+  assert.equal((nav.match(/<svg /g) || []).length, 4);
+  assert.doesNotMatch(nav, /[⌁●▱↶]/);
+});

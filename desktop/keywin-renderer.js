@@ -29,3 +29,4 @@ input.addEventListener("keydown", (event) => {
 });
 document.getElementById("remove").addEventListener("click", () => window.klartext.saveApiKey(provider, ""));
 document.getElementById("cancel").addEventListener("click", () => window.klartext.closeKeyWindow());
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") window.klartext.closeKeyWindow(); });
