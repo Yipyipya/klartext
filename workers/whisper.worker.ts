@@ -9,6 +9,7 @@ import {
   revisionAwareModelCache,
   type LocalModelDefinition,
 } from "../shared/local-models";
+import { transcribeInWindows, type WhisperTranscriber } from "../shared/whisper-windows";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -203,16 +204,10 @@ self.onmessage = async (event: MessageEvent) => {
     }
     const activeTranscriber = await getTranscriber(model.id, request.id, true);
     post({ id: request.id, type: "status", status: "transkribiert" });
-    const output = await activeTranscriber(audio, {
-      chunk_length_s: 30,
-      stride_length_s: 5,
+    const text = await transcribeInWindows(activeTranscriber as unknown as WhisperTranscriber, audio, 16000, {
       language: request.language || undefined,
-      task: "transcribe",
     });
-    const text = Array.isArray(output)
-      ? output.map((item: any) => item.text).join(" ")
-      : output.text;
-    post({ id: request.id, type: "result", text: (text ?? "").trim() });
+    post({ id: request.id, type: "result", text });
   } catch (error: any) {
     const message = String(error?.message ?? error);
     const cancelled = error?.name === "AbortError" || message.includes("aborted");

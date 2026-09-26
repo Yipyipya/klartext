@@ -6,3 +6,4 @@ export {
   isLocalModelCacheUrl,
   revisionAwareModelCache,
 } from "../shared/local-models";
+export { transcribeInWindows, speechWindows, WHISPER_WINDOW_SECONDS } from "../shared/whisper-windows";
