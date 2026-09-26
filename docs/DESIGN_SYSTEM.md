@@ -1,4 +1,4 @@
-# Klartext — Resonanz
+# Nivune — Resonanz
 
 Gewählt am 12. September 2026. Leitidee: Ein präzises Sprachinstrument nimmt einen Gedanken auf und tritt hinter den fertigen Text zurück.
 

@@ -45,8 +45,13 @@ desktop/node_modules
 desktop/dist
 desktop/wake-bundle.js
 desktop/wakesetup-bundle.js
+desktop/shared-core.cjs
+desktop/whisper-bundle.js
+desktop/ort-wasm-simd-threaded.asyncify.mjs
+desktop/ort-wasm-simd-threaded.asyncify.wasm
 desktop/rustpotter-worker.js
 desktop/rustpotter-worklet.js
 desktop/rustpotter-runtime.wasm
 desktop/rustpotter-creator.wasm
 desktop/rustpotter-LICENSE.txt
+desktop/dist-alpha

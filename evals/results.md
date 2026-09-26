@@ -6,11 +6,11 @@
 
 Referenz:
 
-> Wir bauen Klartext mit Next.js und Supabase. Danach testen wir den OpenAI Realtime Flow und automatisieren das Onboarding in Make und n8n.
+> Wir bauen Nivune mit Next.js und Supabase. Danach testen wir den OpenAI Realtime Flow und automatisieren das Onboarding in Make und n8n.
 
 Ergebnis:
 
-> Wir bauen Klartext mit Next.js und Supabase. Danach testen wir den OpenAI Realtime Flow und automatisieren das Onboarding in Make und n8n.
+> Wir bauen Nivune mit Next.js und Supabase. Danach testen wir den OpenAI Realtime Flow und automatisieren das Onboarding in Make und n8n.
 
 - Wortfehler: 0
 - Auslassungen: 0
@@ -23,11 +23,11 @@ Ergebnis:
 
 Referenz:
 
-> Jakob Meyer bespricht morgen mit Theresa König das Klartext-Projekt. Die Notizen gehen anschließend an HubSpot, Pipedrive und das Team von Sigill.
+> Jakob Meyer bespricht morgen mit Theresa König das Nivune-Projekt. Die Notizen gehen anschließend an HubSpot, Pipedrive und das Team von Sigill.
 
 Ergebnis vor Wörterbuch-Anpassung:
 
-> Jakob Meyer bespricht morgen mit Theresa König das Klartext-Projekt. Die Notizen gehen anschließend an HubSpot, Pipedrive und das Team von Sigil.
+> Jakob Meyer bespricht morgen mit Theresa König das Nivune-Projekt. Die Notizen gehen anschließend an HubSpot, Pipedrive und das Team von Sigil.
 
 - Wortfehler: 1 von 21
 - Wortgenauigkeit: 95,2 Prozent
@@ -44,7 +44,7 @@ Ergebnis vor Wörterbuch-Anpassung:
 
 Ergebnis mit zweistufiger Pipeline:
 
-> Jakob Meyer bespricht morgen mit Theresa König das Klartext-Projekt. Die Notizen gehen anschließend an HubSpot, Pipedrive und das Team von Sigill.
+> Jakob Meyer bespricht morgen mit Theresa König das Nivune-Projekt. Die Notizen gehen anschließend an HubSpot, Pipedrive und das Team von Sigill.
 
 - Wortfehler: 0 von 21
 - Eigennamen und Marken: vollständig korrekt

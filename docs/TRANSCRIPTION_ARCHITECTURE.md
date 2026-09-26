@@ -9,7 +9,8 @@ Der Qualitätsmodus ist der Standard für den täglichen Gebrauch.
 3. Sprache, Nutzungskontext und Wörterbuchbegriffe werden als Erkennungshinweise
    mitgegeben.
 4. `gpt-5.4-mini` glättet den Text vorsichtig, ohne Inhalt oder Ton zu verändern.
-5. Eine deterministische Nachkorrektur schützt bekannte Eigennamen und Marken.
+5. Eine deterministische Nachkorrektur wendet ausschließlich das Wörterbuch des
+   jeweiligen Nutzers an. Neue Profile enthalten keine persönlichen Markenregeln.
 6. Im Web bleiben Ergebnis, Original und Verlauf lokal im Browser. Desktop fügt
    den Text an der Cursorposition ein und hält ihn in der Zwischenablage.
 
@@ -34,19 +35,28 @@ können weitere Kosten verursachen. Modus, Sprache, Kontext und Wörterbuch werd
 für jede Aufnahme beim Start festgehalten. Erst ein vollständiges Ergebnis wird
 als Erfolg markiert, im Verlauf gespeichert und gegebenenfalls automatisch kopiert.
 
-In der Web-App liegt der persönliche API-Key im lokalen Browserspeicher. Das ist
-für die private Nutzung ohne eigenen Server pragmatisch, aber nicht für ein
-öffentlich verkauftes Produkt gedacht. Die Desktop-App verschlüsselt den Key
-mit den Sicherheitsfunktionen des Betriebssystems.
+In der Web-App liegt der persönliche API-Key weiterhin im lokalen Browserspeicher,
+seit dem unveröffentlichten 1.0-Entwicklungsstand aber getrennt vom versionierten
+Einstellungsprofil. Das ist eine Browser-Sicherheitsgrenze und kein OS-Schlüsselspeicher.
+Die Desktop-App verschlüsselt den Key mit den Sicherheitsfunktionen des
+Betriebssystems und hält auch den verschlüsselten Wert in einer getrennten
+Zugangsdaten-Datei. Alte 0.3.0-Profile werden vor der Migration gesichert.
 
 ## Lokalmodus
 
-Desktop-Diktate und Datei-Uploads nutzen im Lokalmodus Whisper über transformers.js.
-Dabei verlässt Audio das Gerät nicht. Beim ersten Einsatz wird das gewählte Modell geladen und anschließend
-gecacht. Dieser Modus ist privater, benötigt aber mehr lokalen Speicher und ist
-je nach Gerät langsamer und ungenauer. Web-Diktate im bisherigen „Lokal“-Modus
-nutzen dagegen die Browser Speech API. Diese kann einen externen Sprachdienst
-verwenden und garantiert keine Offline- oder geräteinterne Verarbeitung.
+Desktop-Diktate, Web-Diktate und Datei-Uploads nutzen im unveröffentlichten
+1.0-Entwicklungsstand Whisper über transformers.js. Das Web-Diktat nimmt zuerst
+eine vollständige Audiodatei auf, dekodiert sie zu 16-kHz-Mono-PCM und sendet sie
+an denselben lokalen Worker wie der Dateiweg. Die Browser Speech API wird nicht
+mehr verwendet. Beim ersten Einsatz wird das gewählte Modell geladen und im
+Browserprofil gecacht. Audio wird für die Inferenz nicht an einen Sprachanbieter
+gesendet; der Modelldownload benötigt zunächst eine Netzverbindung.
+
+Die Desktop-App lädt transformers.js und die ONNX-WASM-Laufzeit nicht mehr von
+einem CDN, sondern bündelt JavaScript, WASM und dessen Loader im App-Paket. Die
+Modellgewichte werden weiterhin beim ersten Einsatz geladen und im App-Profil
+gecacht. Ein echter Offline-Neustart nach dem Download ist noch nicht abgenommen;
+deshalb ist der Entwicklungsstand noch kein veröffentlichtes Offline-Versprechen.
 
 ## Datei-Uploads
 
@@ -67,14 +77,37 @@ Auftrag neu und kann die bereits verarbeiteten Abschnitte erneut kosten.
 
 ## Echtzeitstufe zurückgestellt
 
-Eine Live-Vorschau per Browser Speech API gibt es nur im Browser-Erkennungsmodus.
-Der Qualitätsmodus zeigt während der Aufnahme einen Hinweis statt einer Vorschau;
-sein Text stammt ausschließlich aus der aufgenommenen Audiodatei. Auf Wunsch des
-Nutzers wird kein teureres Realtime-Modell eingebaut
-und die Endqualität nicht für schnellere Vorschauen abgesenkt. Eine spätere
-Realtime-Erweiterung muss optional bleiben und Kosten/Qualität transparent machen.
-Die bestehende Browser-Vorschau kann browserabhängig einen externen Sprachdienst
-nutzen; nur lokales Whisper garantiert geräteinterne Erkennung.
+Die Web-App zeigt während der Aufnahme in beiden Modi nur den echten Mikrofonpegel;
+der Text entsteht nach dem Stoppen aus der vollständigen Aufnahme. Dadurch gibt es
+keine parallele Browser-Spracherkennung und keinen versteckten externen Vorschauweg.
+Die Desktop-App kann im Lokalmodus weiter eine lokale Whisper-Vorschau anzeigen.
+Ein optionales Realtime-Modell bleibt späterem Umfang vorbehalten; die Endqualität
+wird nicht für schnellere Vorschauen abgesenkt.
+
+## Gemeinsamer Kern und Einstellungen (unveröffentlicht)
+
+`shared/processing.ts` definiert den auftragsbezogenen Verarbeitungsplan,
+Transkriptions-, Überarbeitungs- und Nachkorrekturstufen sowie den Erhalt des
+Rohtexts. Web-Diktate, Web-Dateien und Desktop-Ergebnisse laufen bereits durch
+diesen Kern. `shared/openai-provider.ts` stellt zusätzlich den gemeinsam genutzten
+OpenAI-Netzwerkadapter für Transkription und Überarbeitung bereit; Web und Desktop
+halten dafür nur noch plattformspezifische Aufrufhüllen.
+`shared/provider-contracts.ts` macht Verarbeitungsort, Formate, Größenlimit,
+Sprach-, Kontext-, Zeitmarken- und Modelllistenfähigkeiten explizit.
+
+`shared/settings.ts` definiert Schema 1 mit getrennten Transkriptions- und
+Überarbeitungsprofilen sowie referenzierten Zugangsdaten. Web und Desktop sichern
+alte Daten, migrieren idempotent und ersetzen beschädigte Felder durch validierte
+Werte. Bestehende Nutzer behalten den früher fest eingebauten Sigill-Eintrag als
+eigenen Wörterbucheintrag; neue Profile erhalten weder diesen Eintrag noch den
+früher persönlichen Standardkontext.
+
+`shared/i18n.ts` ist die gemeinsame, typisierte Grundlage für deutsche und
+englische Laufzeittexte. Sie formatiert Platzhalter, Zahlen und Datum/Uhrzeit
+sprachabhängig. `interfaceLanguage` und `spokenLanguage` sind unabhängige Felder;
+eine Änderung der Oberfläche darf daher die Erkennungssprache nicht verändern.
+Die vollständige Überführung aller bestehenden Web- und Desktop-Texte in diesen
+Katalog ist ein eigener, noch offener Oberflächenschritt.
 
 ## Desktop-Start
 

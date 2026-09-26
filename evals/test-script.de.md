@@ -18,7 +18,7 @@ Onboarding in Make und n8n.
 
 ## 3. Namen und Eigennamen
 
-Jakob Meyer bespricht morgen mit Theresa König das Klartext-Projekt. Die Notizen
+Jakob Meyer bespricht morgen mit Theresa König das Nivune-Projekt. Die Notizen
 gehen anschließend an HubSpot, Pipedrive und das Team von Sigill.
 
 ## 4. Frei gesprochen
@@ -38,7 +38,7 @@ Bitte den gleichen Text einmal auf der Website und einmal in einer leeren Notiz
 mit der Desktop-App sprechen, einschließlich der Füllwörter und Korrekturen:
 
 Ich schicke Theresa morgen, ähm, nein, am Donnerstag um vierzehn Uhr die Notizen
-zum Klartext-Projekt. Bitte lege dafür einen Kontakt in HubSpot an und ergänze
+zum Nivune-Projekt. Bitte lege dafür einen Kontakt in HubSpot an und ergänze
 den nächsten Schritt in Pipedrive. Für Sigill brauchen wir außerdem eine kurze
 Zusammenfassung. Das Frontend läuft mit Next.js und Supabase, die Automatisierung
 mit Make und n8n. Wichtig: Wir planen fünfzehn Tests, nicht fünfzig.
@@ -54,7 +54,7 @@ behalten, der sanfte Modus soll die klare Terminänderung auflösen.
 - Anfang und Ende vergleichen, keine Auslassungen oder verdoppelten Übergänge.
 - Mac: Version 0.1.2 in Programme installieren, einmal starten, dann bei Gelegenheit
   abmelden/anmelden. Tray sichtbar, Shortcut bereit, Mikrofonanzeige aus.
-  Falls der Schlüsselbund für Klartext nachfragt, den Dialog selbst prüfen und
+  Falls der Schlüsselbund für Nivune nachfragt, den Dialog selbst prüfen und
   freigeben. Das Passwort nicht an Codex senden. Der Pakettest ohne manuelle
   Freigabe konnte diesen Dialog nicht abschließen.
 - Windows: Version 0.1.2 installieren, Key eintragen, Diktat mit Strg+Umschalt+Leertaste,

@@ -1,81 +1,86 @@
-# Klartext 🎙️
+# Nivune
 
-**Sprich. Der Rest ist Text.**
+**Speak. The rest is text.**
 
-Klartext ist ein persönliches Diktier- und Transkriptions-Tool für Web, macOS
-und Windows. Es ist von Wispr Flow inspiriert, braucht kein Konto und bietet
-zwei Transkriptionsmodi: beste Qualität über OpenAI oder vollständig lokal.
+[Deutsch](README.de.md)
 
-## Features
+Nivune is a free, local-first dictation and transcription application for the
+web, macOS, and Windows. It works without a Nivune account and lets users choose
+where audio and text are processed: on the device, by a supported provider using
+their own credentials, or by a compatible self-hosted endpoint.
 
-- **Live-Diktat** in 17 Sprachen – Leertaste halten (Push-to-talk),
-  `⌘/Strg+⇧+Leertaste` für Hands-free, `Esc` zum Beenden
-- **Klartext-Aufräumen**: Füllwörter („ähm“, „äh“ …), doppelte Wörter und
-  Zeichensetzung werden automatisch bereinigt – mit „Original anzeigen“ zum Vergleich
-- **Qualitätsmodus**: Aufnahmen und unterstützte Audiodateien werden mit
-  `gpt-transcribe` verarbeitet. Kontext und Wörterbuch verbessern Namen,
-  Fachbegriffe und gemischtes Deutsch/Englisch.
-- **Lokalmodus**: Datei-Transkription über Whisper mit transformers.js und
-  WebGPU/WASM. Die Audiodatei bleibt dabei auf dem Gerät.
-- **Auto-Kopieren**: Nach dem Diktat liegt der Text in der Zwischenablage –
-  App wechseln, einfügen, fertig
-- **Persönliches Wörterbuch**: falsch erkannte Namen/Fachbegriffe automatisch ersetzen
-- **Verlauf & Statistik**: Wörter gesamt, Ø WPM, Tages-Serie – alles in localStorage
-- **PWA**: „Zum Startbildschirm hinzufügen“ macht Klartext zur App auf jedem Gerät
-- Light/Dark Mode
+## Project status
 
-## Entwicklung
+The last public release is **0.3.0 under the former working name Klartext**. The
+`develop/v1-core` branch contains the unreleased Nivune 1.0 work and must not
+be presented as a stable public release. The
+verified implementation status and remaining platform gates are documented in
+[`docs/FEATURE_STATUS.md`](docs/FEATURE_STATUS.md).
 
-```bash
-npm install
-npm run dev     # http://localhost:3000
-npm run build   # statischer Produktions-Build
-npm test        # Regressionstests ohne kostenpflichtige API-Aufrufe
-```
+The 1.0 development version includes:
 
-## Teilen / Deployen
+- system-wide desktop dictation with clipboard and cursor insertion;
+- microphone recordings and audio-file imports;
+- local Whisper transcription with explicit model downloads;
+- OpenAI, Groq, and compatible transcription endpoints with user-owned keys;
+- optional deterministic cleanup, OpenAI-compatible refinement, or local Ollama;
+- editable raw and refined text, local history, TXT/Markdown export, and recovery;
+- separate interface and spoken-language settings in German and English;
+- a manual update check that only opens the official release page;
+- no Nivune account, mandatory subscription, hidden proxy, or silent cloud fallback.
 
-Die App ist statisch und braucht keine Datenbank. Im Qualitätsmodus hinterlegt
-der Nutzer seinen eigenen OpenAI-API-Key direkt in den Einstellungen. Er wird
-nur im lokalen Browserspeicher dieses Geräts gespeichert.
-Die bestehende Website ist https://klartext-ai.vercel.app und wird über
-das GitHub-Projekt `Yipyipya/klartext` auf Vercel aktualisiert. `noindex` bittet
-Suchmaschinen, sie nicht zu indexieren. Dies ist kein Zugriffsschutz: Jeder mit
-dem Link kann die Seite öffnen. API-Key und Verlauf sind pro Browser/Adresse
-gespeichert, Daten von localhost werden nicht automatisch übertragen.
+Some of these paths are not yet released or fully accepted on Windows. Do not use
+the development build for irreplaceable recordings.
 
-**Hinweis:** Die Live-Vorschau braucht Chrome, Edge oder Safari. Im Lokalmodus
-wird beim ersten Einsatz einmalig ein Whisper-Modell geladen und danach im
-Browser-Cache vorgehalten.
+## Development
 
-## Desktop-App (macOS-Menüleiste) 🖥️
-
-Im Ordner [`desktop/`](desktop/) liegt das Desktop-Upgrade: eine Menüleisten-App,
-die systemweites Diktat kann – wie das Original:
-
-- **⌥ + Leertaste** (in *jeder* App): Aufnahme-Pill erscheint unten mittig,
-  sprechen, nochmal ⌥+Leer → Text wird transkribiert, aufgeräumt und **direkt
-  an der Cursor-Position eingefügt** (`Esc` bricht ab)
-- Qualitätsmodus mit `gpt-transcribe` und lokal verschlüsseltem OpenAI-Key
-- Optionaler Lokalmodus über Whisper, der beim ersten Start ein Modell lädt
-- Sprache, Transkriptionsmodus und lokales Modell über das Menü umstellbar
-- Autostart bei der Anmeldung (abschaltbar im Tray), Vorbereitung ohne Mikrofonaufnahme
-- Im Qualitätsmodus keine kostenpflichtige Vorab-Anfrage; lokales Whisper lädt nur
-  vor, wenn der Lokalmodus ausgewählt ist
+Node.js 24 is the supported build runtime.
 
 ```bash
-cd desktop
-npm install
-npm start          # App starten (Menüleiste: 🎙️)
-npm run dist       # .dmg bauen (dist/) – zum Weitergeben an Freunde
+npm ci
+npm --prefix desktop ci
+npm run verify
 ```
 
-Beim ersten Diktat fragt macOS nach **Mikrofon** und **Bedienungshilfen**
-(Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen) – letzteres
-braucht die App, um den Text automatisch einzufügen. Ohne die Berechtigung
-landet der Text trotzdem in der Zwischenablage (⌘V zum Einfügen).
+Run the web application locally:
 
-Die App ist nur ad-hoc signiert, nicht Apple-notarisiert. Daher kann macOS den
-Autostart blockieren. In diesem Fall Klartext nach Programme verschieben und unter
-Systemeinstellungen → Allgemein → Anmeldeobjekte hinzufügen. Der Tray-Status zeigt,
-was das Betriebssystem zurückmeldet. Windows wird auf einem echten PC geprüft.
+```bash
+npm run dev
+```
+
+The public website is served at `/` (German) and `/en`; the web application
+lives at `/app`.
+
+Run the Electron application:
+
+```bash
+npm --prefix desktop start
+```
+
+The full source-build and packaging instructions are in
+[`docs/BUILDING.md`](docs/BUILDING.md). Self-hosting and data-flow boundaries are
+documented in [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md).
+
+## Local models and external providers
+
+Model weights are not included in the source tree or installer. Nivune downloads
+a selected model only after an explicit user action and then uses its pinned cache
+revision. See [`docs/LOCAL_MODELS.md`](docs/LOCAL_MODELS.md) for model versions,
+licenses, sizes, and verified offline boundaries.
+
+External providers are optional and may charge for their APIs. Credentials are
+entered for the selected target; Nivune does not provide a shared transcription
+backend. Local processing and cloud processing are shown separately in the app.
+
+## Contributing and security
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before proposing a change. Provider
+extensions must follow [`docs/ADAPTERS.md`](docs/ADAPTERS.md). Report suspected
+vulnerabilities privately as described in [`SECURITY.md`](SECURITY.md); never post
+keys, private transcripts, recordings, or exploit details in a public issue.
+
+## License
+
+Nivune source code is available under the [MIT License](LICENSE). Dependencies,
+bundled runtimes, and separately downloaded models retain their own licenses; see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible problem without private content or credentials.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include API keys, private transcripts, recordings, or security exploit details. Use the Security tab for vulnerabilities.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Web
+        - macOS desktop
+        - Windows desktop
+        - Build or self-hosting
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 1.0.0-beta.1 or commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic text or audio only.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, browser if applicable, local or cloud path, and selected model/provider. Do not include keys.
+    validations:
+      required: true

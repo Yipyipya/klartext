@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a focused improvement and the user problem it solves.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the recurring task or limitation, not only the proposed UI.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Primary surface
+      options:
+        - Shared core
+        - Web
+        - Desktop
+        - Provider adapter
+        - Documentation
+        - Other
+    validations:
+      required: true
