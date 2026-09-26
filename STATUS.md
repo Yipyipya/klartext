@@ -5,6 +5,33 @@ Stand: 23. September 2026
 Nahtlose Fortsetzung: [Entwicklungsübergabe](docs/DEVELOPMENT_HANDOFF.md).
 **Was noch dich braucht:** [Release-Checkliste 1.0](docs/RELEASE_1.0_CHECKLIST.md).
 
+## 26. September 2026: Nivune als Alltags-App installiert
+
+- Commit und Push freigegeben: 5 Commits auf `develop/v1-core`, GitHub-CI
+  „Verify builds“ grün. `main` und die Live-Seite sind unverändert.
+- Beim ersten echten Start gefunden und behoben (Commit `0789d44`): Electron legt
+  den Nivune-Profilordner vor dem Main-Code an, dadurch wurde das Klartext-Profil
+  nie übernommen. Außerdem zeigte die App alte, nicht mehr entschlüsselbare
+  Klartext-Keys als „gespeichert“. Jetzt zählt ein Profil erst mit
+  `settings.json`, und unlesbare Keys gelten als fehlend. 196/196 Tests.
+- Installiert: `/Applications/Nivune.app` 1.0.0-beta.1 aus Commit `0789d44`
+  (ad hoc signiert). Nutzt das bisherige Profil `klartext-desktop` mit
+  Sprachmodell, Whisper-Cache und Verlauf; `settings.json.backup-0.3.0` wurde
+  angelegt. Zusätzliche Profilsicherung ohne Caches:
+  `~/Library/Application Support/klartext-desktop-backup-2026-09-26`.
+- Entfernt (in den Papierkorb, wiederherstellbar): `Klartext.app`,
+  `Klartext Alpha.app`, drei `Klartext Alpha 1.0 Candidate*.app`, die Profile
+  `Klartext Alpha` und `klartext-desktop-development` sowie das verwaiste
+  Anmeldeobjekt „Klartext“.
+- Der OpenAI-Key muss in Nivune neu eingegeben werden (Keys der alten App sind an
+  deren Schlüsselbund-Eintrag gebunden).
+- `Documents` wird inzwischen von einem Sync-Dienst verwaltet. Dabei verschwanden
+  `node_modules`, `.next` und `desktop/dist`, und Signaturen scheitern an
+  Dateiattributen im Projektordner. Pakete werden deshalb nach
+  `~/Library/Caches/nivune-build/dist` gebaut (Prüfsummen und Manifest dort).
+  Mac: SHA-256 `cac00a10683a536e3775ef6403c801157be964cbddebb593e90ebab2879fd068`,
+  Windows: `d44c5bb58bb11912ede0fc69abb84261dcbc66564560d9ddfe78fdf182a05409`.
+
 ## Kurzstand 23. September 2026: Kandidat 1.0.0-beta.1
 
 Alles, was ohne Entscheidungen, Zugänge, echte Geräte oder Beta-Teilnehmende

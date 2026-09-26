@@ -70,6 +70,18 @@ Cross-Build vom Mac und ersetzt keinen Build und Test auf Windows.
 Wichtig beim Prüfen von Paketinhalten: `asar extract-file` schreibt in das
 aktuelle Verzeichnis. Nur in einem leeren temporären Ordner ausführen.
 
+## Synchronisierte Ordner
+
+Liegt das Repository in einem von iCloud Drive oder OneDrive verwalteten Ordner,
+setzt der Sync-Dienst Dateiattribute, an denen `codesign` scheitert
+(„resource fork, Finder information, or similar detritus not allowed“). Dann das
+Ausgabeverzeichnis außerhalb bauen, zum Beispiel:
+
+```bash
+npx --prefix desktop electron-builder --projectDir desktop --mac dmg \
+  --config.directories.output="$HOME/Library/Caches/nivune-build/dist"
+```
+
 ## CI
 
 `.github/workflows/verify-builds.yml` führt bei Pull Requests und Änderungen auf
