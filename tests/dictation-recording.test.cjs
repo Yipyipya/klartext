@@ -1,8 +1,9 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const Module = require("node:module");
-const { createAudioCapture } = require("../lib/audio-recorder.ts");
+const { MAX_LIVE_RECORDING_SECONDS, createAudioCapture } = require("../lib/audio-recorder.ts");
 const { processQualityDictation } = require("../lib/process-dictation.ts");
+const { mixToMono, transcribeLocalAudioWith } = require("../lib/local-audio.ts");
 const { DEFAULT_SETTINGS } = require("../lib/store.ts");
 
 function replaceGlobal(t, name, value) {
@@ -42,6 +43,13 @@ function recorderMock(t, options = {}) {
   replaceGlobal(t, "MediaRecorder", Recorder);
   return { instances, attempts };
 }
+
+test("Live-Diktat ist auf zehn Minuten begrenzt und wird kontrolliert finalisiert", () => {
+  assert.equal(MAX_LIVE_RECORDING_SECONDS, 600);
+  const pageSource = require("node:fs").readFileSync(require("node:path").join(__dirname, "../app/(de)/app/page.tsx"), "utf8");
+  assert.match(pageSource, /elapsed >= MAX_LIVE_RECORDING_SECONDS/);
+  assert.match(pageSource, /void finishDictation\(\)/);
+});
 
 test("Safari-Pfad bevorzugt MP4/AAC und startet ohne fragmentierenden Timeslice", async (t) => {
   const { instances } = recorderMock(t);
@@ -199,6 +207,30 @@ test("Stop während der Mikrofonfreigabe beendet nachträglich freigegebene Trac
   assert.equal(h.states[1], false);
 });
 
+test("lokales Web-Diktat mischt Stereo und sendet PCM an Whisper statt Browser Speech", async () => {
+  let received;
+  const progress = [];
+  const result = await transcribeLocalAudioWith(new Blob(["audio"]), {
+    language: "de",
+    model: "onnx-community/whisper-base",
+  }, (event) => progress.push(event.detail), {
+    decode: async () => ({
+      channels: [new Float32Array([1, -1]), new Float32Array([0, 1])],
+      sampleRate: 16000,
+      duration: 1,
+    }),
+    transcribePcm: async (pcm, options) => {
+      received = { pcm: [...pcm], options };
+      return "lokaler Text";
+    },
+  });
+  assert.equal(result, "lokaler Text");
+  assert.deepEqual(received.pcm, [0.5, 0]);
+  assert.equal(received.options.language, "de");
+  assert.match(progress[0], /lokale Verarbeitung/);
+  assert.deepEqual([...mixToMono({ channels: [new Float32Array([0.5])], sampleRate: 16000, duration: 1 })], [0.5]);
+});
+
 function job(settings = {}) {
   return { audio: new Blob(["audio"]), settings: { ...DEFAULT_SETTINGS, openaiApiKey: "test-only", ...settings }, prefix: "Vorheriger Text.", duration: 30 };
 }
@@ -207,6 +239,40 @@ test("Qualitätsverarbeitung verlangt Key und Audio statt Browser-Fallback", asy
   const unused = { transcribe: () => assert.fail("keine Anfrage erwartet"), refine: () => assert.fail("keine Anfrage erwartet") };
   await assert.rejects(processQualityDictation(job({ openaiApiKey: "" }), () => {}, unused), /API-Key/);
   await assert.rejects(processQualityDictation({ ...job(), audio: null }, () => {}, unused), /Audioaufnahme/);
+});
+
+test("Qualitätsdiktat sendet nur an das ausdrücklich gewählte Anbieterprofil", async () => {
+  const seen = [];
+  const dependencies = {
+    transcribe: async (_audio, request) => { seen.push(request); return "Vollständiger Text."; },
+    refine: async (raw) => raw,
+  };
+  await processQualityDictation(job({
+    transcriptionProvider: "groq",
+    groqApiKey: "groq-only",
+    groqModel: "whisper-large-v3-turbo",
+    cleanup: "aus",
+  }), () => {}, dependencies);
+  assert.equal(seen[0].provider, "groq");
+  assert.equal(seen[0].apiKey, "groq-only");
+  assert.equal(seen[0].model, "whisper-large-v3-turbo");
+
+  await processQualityDictation(job({
+    transcriptionProvider: "openai-compatible",
+    compatibleTranscriptionBaseUrl: "http://127.0.0.1:9010/v1/",
+    compatibleTranscriptionModel: "whisper-local",
+    compatibleTranscriptionApiKey: "",
+    cleanup: "aus",
+  }), () => {}, dependencies);
+  assert.equal(seen[1].provider, "openai-compatible");
+  assert.equal(seen[1].baseUrl, "http://127.0.0.1:9010/v1");
+  assert.equal(seen[1].apiKey, "");
+
+  await assert.rejects(processQualityDictation(job({
+    transcriptionProvider: "groq",
+    groqApiKey: "",
+  }), () => {}, dependencies), /Groq API-Key/);
+  assert.equal(seen.length, 2);
 });
 
 test("Cloud-Fehler bleibt Fehler und kann mit derselben Aufnahme wiederholt werden", async () => {
@@ -231,19 +297,19 @@ test("Feinschliff-Fehler erhält Rohtext, Retry verursacht keine zweite Audioanf
   const raw = "Morgen, nein, am Donnerstag. 15 Tests, nicht 50.";
   const dependencies = {
     transcribe: async () => { audioCalls++; return raw; },
-    refine: async () => { if (++refineCalls === 1) throw new Error("timeout"); return "Am Donnerstag. 15 Tests."; },
+    refine: async () => { if (++refineCalls === 1) throw new Error("timeout"); return "Am Donnerstag. 15 Tests, nicht 50."; },
   };
   const partial = await processQualityDictation(recording, (stage) => stages.push(stage), dependencies);
   assert.equal(partial.raw, raw);
   assert.equal(partial.text, raw);
   assert.match(partial.warning, /nicht automatisch kopiert/);
   const final = await processQualityDictation(recording, (stage) => stages.push(stage), dependencies);
-  assert.equal(final.text, "Am Donnerstag. 15 Tests.");
+  assert.equal(final.text, "Am Donnerstag. 15 Tests, nicht 50.");
   assert.equal(final.raw, raw);
   assert.equal(final.warning, undefined);
   assert.equal(audioCalls, 1);
   assert.equal(refineCalls, 2);
-  assert.deepEqual(stages, ["Audio wird transkribiert …", "Text wird geglättet …", "Text wird geglättet …"]);
+  assert.deepEqual(stages, ["Audio wird transkribiert …", "Text wird vorsichtig überarbeitet …", "Text wird vorsichtig überarbeitet …"]);
 });
 
 test("Wortgetreu überspringt Feinschliff, leere Modellantworten werden nicht als fertig gewertet", async () => {

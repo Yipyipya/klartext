@@ -2,10 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createAudioCapture, type AudioCapture } from "../lib/audio-recorder";
-
-/* Web Speech API ist nicht in den TS-DOM-Typen enthalten */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type Recognition = any;
+import { uiText, type InterfaceLanguage } from "../shared/i18n";
 
 export interface Dictation {
   supported: boolean;
@@ -20,7 +17,7 @@ export interface Dictation {
   setFinalText: (updater: string | ((prev: string) => string)) => void;
 }
 
-export function useDictation(lang: string, qualityMode = false): Dictation {
+export function useDictation(_lang: string, interfaceLanguage: InterfaceLanguage = "de"): Dictation {
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
   const [finalText, setFinalText] = useState("");
@@ -29,28 +26,21 @@ export function useDictation(lang: string, qualityMode = false): Dictation {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
 
-  const recRef = useRef<Recognition>(null);
   const captureRef = useRef<AudioCapture | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopPromiseRef = useRef<Promise<Blob | null> | null>(null);
   const generationRef = useRef(0);
   const activeRef = useRef(false);
-  const langRef = useRef(lang);
-  langRef.current = lang;
-
   useEffect(() => {
-    const w = window as any;
-    const hasBrowserRecognition = !!(w.SpeechRecognition || w.webkitSpeechRecognition);
     const canRecordAudio = !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
-    setSupported(qualityMode ? canRecordAudio : hasBrowserRecognition);
-  }, [qualityMode]);
+    setSupported(canRecordAudio);
+  }, []);
 
   useEffect(() => () => {
     activeRef.current = false;
     generationRef.current++;
     captureRef.current?.dispose();
     streamRef.current?.getTracks().forEach((track) => track.stop());
-    try { recRef.current?.abort(); } catch { /* bereits beendet */ }
   }, []);
 
   const stop = useCallback(async (): Promise<Blob | null> => {
@@ -60,11 +50,6 @@ export function useDictation(lang: string, qualityMode = false): Dictation {
     setListening(false);
     setStartedAt(null);
     setInterim("");
-    try {
-      recRef.current?.stop();
-    } catch {
-      /* war bereits gestoppt */
-    }
     const capture = captureRef.current;
     stopPromiseRef.current = (async () => {
       try {
@@ -83,19 +68,6 @@ export function useDictation(lang: string, qualityMode = false): Dictation {
 
   const start = useCallback(async () => {
     if (activeRef.current || stopPromiseRef.current) return;
-    const w = window as any;
-    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!Ctor && !qualityMode) {
-      setSupported(false);
-      return;
-    }
-    if (recRef.current) {
-      recRef.current.onresult = null;
-      recRef.current.onend = null;
-      recRef.current.onerror = null;
-      try { recRef.current.abort(); } catch { /* bereits beendet */ }
-      recRef.current = null;
-    }
     setInterim("");
     setError(null);
     activeRef.current = true;
@@ -112,75 +84,20 @@ export function useDictation(lang: string, qualityMode = false): Dictation {
       }
       setStream(s);
       streamRef.current = s;
-      if (qualityMode) captureRef.current = createAudioCapture(s);
+      captureRef.current = createAudioCapture(s, 10_000, interfaceLanguage);
     } catch (error) {
       if (generation !== generationRef.current) return;
-      if (qualityMode || !Ctor) {
-        activeRef.current = false;
-        streamRef.current?.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-        setStream(null);
-        setListening(false);
-        setStartedAt(null);
-        setError(error instanceof Error && error.name !== "NotAllowedError"
-          ? error.message : "Kein Mikrofonzugriff. Bitte erlaube das Mikrofon in den Website-Einstellungen deines Browsers.");
-        return;
-      }
-      // Ohne eigenen Stream keine Waveform. Die Browser-Erkennung fragt selbst nach dem Mikrofon.
+      activeRef.current = false;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setStream(null);
+      setListening(false);
+      setStartedAt(null);
+      setError(error instanceof Error && error.name !== "NotAllowedError"
+        ? error.message : uiText(interfaceLanguage, "Kein Mikrofonzugriff. Bitte erlaube das Mikrofon in den Website-Einstellungen deines Browsers.", "No microphone access. Please allow the microphone in your browser's site settings."));
+      return;
     }
-
-    if (qualityMode || !Ctor) return;
-
-    const rec = new Ctor();
-    rec.lang = langRef.current;
-    rec.continuous = true;
-    rec.interimResults = true;
-
-    rec.onresult = (e: any) => {
-      let interimStr = "";
-      let finalAdd = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) finalAdd += r[0].transcript;
-        else interimStr += r[0].transcript;
-      }
-      if (finalAdd.trim()) {
-        setFinalText((prev) =>
-          prev ? prev.replace(/\s+$/, "") + " " + finalAdd.trim() : finalAdd.trim()
-        );
-      }
-      setInterim(interimStr);
-    };
-
-    rec.onerror = (e: any) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        setError(
-          "Kein Mikrofonzugriff. Bitte erlaube das Mikrofon in den Browser-Einstellungen."
-        );
-        void stop().catch(() => {});
-      }
-      // "no-speech" u. ä. ignorieren – onend startet neu
-    };
-
-    // Chrome beendet die Erkennung nach Stillephasen von selbst → neu starten
-    rec.onend = () => {
-      if (activeRef.current) {
-        try {
-          rec.start();
-        } catch {
-          /* Neustart kollidierte – nächstes onend versucht es erneut */
-        }
-      }
-    };
-
-    recRef.current = rec;
-    try {
-      rec.start();
-    } catch {
-      setError("Die Spracherkennung konnte nicht gestartet werden.");
-      void stop().catch(() => {});
-    }
-  }, [qualityMode, stop]);
+  }, [interfaceLanguage]);
 
   return {
     supported,

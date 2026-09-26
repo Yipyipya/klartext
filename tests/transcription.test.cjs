@@ -3,16 +3,27 @@ const assert = require("node:assert/strict");
 const { cleanTranscript, applyDictionary } = require("../lib/cleanup.ts");
 const { DEFAULT_SETTINGS } = require("../lib/store.ts");
 const { MAX_AUDIO_BYTES, transcribeWithOpenAI } = require("../lib/cloud-transcribe.ts");
-const { canUploadDirectly, splitAudio, encodeWav, transcribeUpload } = require("../lib/audio-upload.ts");
+const {
+  MAX_WEB_UPLOAD_FILE_BYTES,
+  MAX_WEB_UPLOAD_QUEUE_BYTES,
+  MAX_WEB_UPLOAD_QUEUE_FILES,
+  admitUploadFiles,
+  canUploadDirectly,
+  encodeWav,
+  releaseUploadBudget,
+  splitAudio,
+  transcribeUpload,
+} = require("../lib/audio-upload.ts");
 const { refineTranscriptWithOpenAI } = require("../lib/refine-transcript.ts");
 
 const options = { apiKey: "test-only", language: "de-DE", dictionary: [], context: "Test" };
 
-test("Wörterbuch ist grenzensicher und Sigill bleibt bei Wiederholung stabil", () => {
+test("Nutzerwörterbuch ist grenzensicher und bleibt bei Wiederholung stabil", () => {
   const input = "Sigil, Sigill, sigil, Sigill-Projekt, Sigillum.";
   const expected = "Sigill, Sigill, Sigill, Sigill-Projekt, Sigillum.";
-  assert.equal(cleanTranscript(input, DEFAULT_SETTINGS), expected);
-  assert.equal(cleanTranscript(expected, DEFAULT_SETTINGS), expected);
+  const settings = { ...DEFAULT_SETTINGS, dictionary: [{ from: "Sigil", to: "Sigill" }] };
+  assert.equal(cleanTranscript(input, settings), expected);
+  assert.equal(cleanTranscript(expected, settings), expected);
   assert.equal(applyDictionary("Änne, Änneliese", [{ from: "Änne", to: "$& Anna" }]), "$& Anna, Änneliese");
 });
 
@@ -24,6 +35,56 @@ test("Direkte Uploads werden nach Format und API-Limit gewählt", () => {
   for (const name of ["a.mp3", "a.M4A", "a.wav", "a.webm", "a.mp4"]) assert.equal(canUploadDirectly(new File(["audio"], name)), true);
   assert.equal(canUploadDirectly(new File(["audio"], "a.flac")), false);
   assert.equal(canUploadDirectly({ name: "a.wav", size: MAX_AUDIO_BYTES + 1 }), false);
+});
+
+test("Web-Upload begrenzt aktive und wartende Dateien gemeinsam", () => {
+  const files = Array.from({ length: MAX_WEB_UPLOAD_QUEUE_FILES + 1 }, (_, index) => ({
+    name: `${index}.wav`, type: "audio/wav", size: 1,
+  }));
+  const empty = admitUploadFiles(files, { count: 0, bytes: 0 });
+  assert.equal(empty.decisions.filter((entry) => entry.accepted).length, MAX_WEB_UPLOAD_QUEUE_FILES);
+  assert.deepEqual(empty.decisions.at(-1), { file: files.at(-1), accepted: false, reason: "queue-full" });
+
+  const withActiveJob = admitUploadFiles(files.slice(0, 12), { count: 1, bytes: 1 });
+  assert.equal(withActiveJob.decisions.filter((entry) => entry.accepted).length, 11);
+  assert.equal(withActiveJob.decisions.at(-1).reason, "queue-full");
+});
+
+test("Web-Upload akzeptiert die Byte-Grenze exakt und lehnt ein weiteres Byte ab", () => {
+  const files = [
+    { name: "exact.wav", type: "audio/wav", size: 1 },
+    { name: "too-much.wav", type: "audio/wav", size: 1 },
+  ];
+  const result = admitUploadFiles(files, { count: 1, bytes: MAX_WEB_UPLOAD_QUEUE_BYTES - 1 });
+  assert.equal(result.decisions[0].accepted, true);
+  assert.deepEqual(result.decisions[1], { file: files[1], accepted: false, reason: "queue-bytes-exceeded" });
+  assert.deepEqual(result.nextBudget, { count: 2, bytes: MAX_WEB_UPLOAD_QUEUE_BYTES });
+});
+
+test("Web-Upload prüft Einzeldateigröße, leere Datei und Format vor der Queue", () => {
+  const files = [
+    { name: "exact.wav", type: "audio/wav", size: MAX_WEB_UPLOAD_FILE_BYTES },
+    { name: "large.wav", type: "audio/wav", size: MAX_WEB_UPLOAD_FILE_BYTES + 1 },
+    { name: "empty.wav", type: "audio/wav", size: 0 },
+    { name: "notes.txt", type: "text/plain", size: 10 },
+    { name: "later.mp3", type: "audio/mpeg", size: 10 },
+  ];
+  const result = admitUploadFiles(files, { count: 0, bytes: 0 });
+  assert.equal(result.decisions[0].accepted, true);
+  assert.equal(result.decisions[1].reason, "file-too-large");
+  assert.equal(result.decisions[2].reason, "empty-file");
+  assert.equal(result.decisions[3].reason, "unsupported-type");
+  assert.equal(result.decisions[4].accepted, true);
+  assert.deepEqual(result.nextBudget, { count: 2, bytes: MAX_WEB_UPLOAD_FILE_BYTES + 10 });
+});
+
+test("Web-Upload gibt Budget nach jedem verarbeiteten Job wieder frei", () => {
+  const full = { count: MAX_WEB_UPLOAD_QUEUE_FILES, bytes: 42 };
+  const released = releaseUploadBudget(full, { size: 2 });
+  assert.deepEqual(released, { count: MAX_WEB_UPLOAD_QUEUE_FILES - 1, bytes: 40 });
+  const result = admitUploadFiles([{ name: "next.wav", type: "audio/wav", size: 2 }], released);
+  assert.equal(result.decisions[0].accepted, true);
+  assert.deepEqual(result.nextBudget, full);
 });
 
 test("6 Minuten Stereo-WAV: alle Samples genau einmal, jeder Abschnitt unter 24 MB", () => {
@@ -70,6 +131,24 @@ test("M4A-Direktupload benötigt keinen Browser-Decoder", async () => {
   assert.equal(result.raw, "Vollständiger Text.");
 });
 
+test("Dateiimport bewahrt das gewählte Cloud-Profil statt auf OpenAI zurückzufallen", async () => {
+  let request;
+  const result = await transcribeUpload(new File(["audio"], "memo.webm"), {
+    ...options,
+    provider: "groq",
+    model: "whisper-large-v3-turbo",
+    apiKey: "groq-only",
+  }, () => {}, {
+    decode: async () => assert.fail("Direktupload erwartet"),
+    duration: async () => 2,
+    transcribe: async (_audio, received) => { request = received; return "Groq Text."; },
+  });
+  assert.equal(result.raw, "Groq Text.");
+  assert.equal(request.provider, "groq");
+  assert.equal(request.model, "whisper-large-v3-turbo");
+  assert.equal(request.apiKey, "groq-only");
+});
+
 test("Fehlender Key wechselt nicht still auf ein anderes Modell", async () => {
   await assert.rejects(transcribeUpload(new File(["audio"], "a.mp3"), { ...options, apiKey: "" }, () => {}), /API-Key/);
 });
@@ -101,7 +180,7 @@ test("Transkription nutzt unverändert gpt-transcribe, richtigen Dateinamen und 
   assert.equal(form.get("model"), "gpt-transcribe");
   assert.equal(form.get("file").name, "dictation.m4a");
   assert.deepEqual(form.getAll("languages[]"), ["de", "en"]);
-  assert.ok(form.getAll("keywords[]").includes("Sigill"));
+  assert.ok(!form.getAll("keywords[]").includes("Sigill"));
 });
 
 test("Unvollständige KI-Ausgabe wird verworfen", async (t) => {
@@ -116,9 +195,10 @@ test("Langer Feinschliff verarbeitet alle Textteile ohne Abschneiden", async (t)
     const body = JSON.parse(init.body);
     assert.equal(body.model, "gpt-5.4-mini");
     assert.equal(body.store, false);
-    assert.ok(body.input.length <= 12000);
-    received.push(body.input);
-    return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: body.input }] }] });
+    const data = JSON.parse(body.input);
+    assert.ok(data.dictation.length <= 12000);
+    received.push(data.dictation);
+    return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: data.dictation }] }] });
   });
   const result = await refineTranscriptWithOpenAI(input, "test");
   assert.ok(received.length > 1);
