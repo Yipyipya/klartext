@@ -590,3 +590,9 @@ test("Arbeitsbereich-Navigation nutzt gezeichnete Icons statt Textzeichen", () =
   assert.equal((nav.match(/<svg /g) || []).length, 4);
   assert.doesNotMatch(nav, /[⌁●▱↶]/);
 });
+
+test("Beenden von außen wird nicht durch die nicht schließbare Aufnahmeblase blockiert", () => {
+  const main = fs.readFileSync(path.join(__dirname, "../desktop/main.js"), "utf8");
+  assert.match(main, /app\.on\("before-quit", \(\) => \{[\s\S]{0,120}isQuitting = true;[\s\S]{0,80}pill\?\.destroy\(\)/);
+  assert.match(main, /for \(const signal of \["SIGTERM", "SIGINT"\]\)[\s\S]{0,80}quitApp\(\)/);
+});

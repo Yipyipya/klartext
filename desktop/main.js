@@ -2901,6 +2901,23 @@ app.on("activate", () => {
   else if (!onboardingState.completed) openOnboardingWindow();
   else openWorkspaceWindow();
 });
+// Beenden von außen (Cmd+Q, Abmelden, Herunterfahren, Dock, AppleScript, SIGTERM)
+// muss dieselbe Aufräumlogik nutzen. Sonst verhindert die nicht schließbare
+// Aufnahmeblase, dass die App überhaupt endet.
+app.on("before-quit", () => {
+  if (isQuitting) return;
+  isQuitting = true;
+  try {
+    pill?.destroy();
+  } catch {
+    /* bereits geschlossen */
+  }
+});
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.on(signal, () => {
+    if (!isQuitting) quitApp();
+  });
+}
 app.on("will-quit", () => {
   // Eine zweite Instanz kann noch vor app.whenReady() am Single-Instance-Lock
   // scheitern. globalShortcut ist in diesem frühen Shutdown noch nicht nutzbar.
