@@ -78,7 +78,9 @@ setzt der Sync-Dienst Dateiattribute, an denen `codesign` scheitert
 Ausgabeverzeichnis außerhalb bauen, zum Beispiel:
 
 ```bash
-npx --prefix desktop electron-builder --projectDir desktop --mac dmg \
+cd desktop
+npm run bundle
+npx electron-builder --mac dmg \
   --config.directories.output="$HOME/Library/Caches/nivune-build/dist"
 ```
 
